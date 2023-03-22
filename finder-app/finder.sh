@@ -15,5 +15,5 @@ fi
 filecount=`find $filesdir -type f | wc -l`
 linecount=`grep -R $searchstr $filesdir | wc -l`
 
-printf 'The number of files are %d and the number of matching lines are %d\n' $filecount $matchlines
+printf 'The number of files are %d and the number of matching lines are %d\n' $filecount $linecount
 
