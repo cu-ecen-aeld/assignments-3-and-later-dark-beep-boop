@@ -1,7 +1,7 @@
 TARGET_EXEC := writer
 
-BUILD_DIR := ./finder-app
-SRC_DIR := ./finder-app
+BUILD_DIR := .
+SRC_DIR := .
 
 CC := $(CROSS_COMPILE)gcc
 
