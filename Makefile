@@ -3,7 +3,9 @@ TARGET_EXEC := writer
 BUILD_DIR := ./finder-app
 SRC_DIR := ./finder-app
 
-CC = $(CROSS_COMPILE)gcc
+CC := $(CROSS_COMPILE)gcc
+
+.PHONY: clean
 
 $(BUILD_DIR)/$(TARGET_EXEC): %: %.o
 	mkdir -p $(dir $@)
