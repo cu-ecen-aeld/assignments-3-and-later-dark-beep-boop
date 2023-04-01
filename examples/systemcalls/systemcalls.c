@@ -1,4 +1,24 @@
 #include "systemcalls.h"
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#define TRYC(expr, msg)                         \
+    if ((expr) == -1) {                         \
+        perror(msg);                            \
+        fprintf(                                \
+            stderr,                             \
+            "Error in file %s, line %d: %s\n",  \
+            __FILE__,                           \
+            __LINE__,                           \
+            #expr);                             \
+        goto done;                              \
+    } NULL
 
 /**
  * @param cmd the command to execute with system()
@@ -9,15 +29,31 @@
 */
 bool do_system(const char *cmd)
 {
+    bool ok = false;
+    int status;
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
+    TRYC(status = system(cmd), "system");
 
-    return true;
+    if (cmd == NULL && status == 0) {
+        fprintf(stderr, "Shell couldn't be created\n");
+    } else if (WIFEXITED(status)) {
+        if (WEXITSTATUS(status) == 127) {
+            fprintf(stderr, "Command \"%s\" couldn't be executed\n", cmd);
+        } else {
+            ok = true;
+        }
+    }
+
+  done:
+    return ok;
+}
+
+void do_exec_child(char * const command[])
+{
+    TRYC(execv(command[0], command + 1), "execv");
+
+  done:
+    exit(EXIT_FAILURE);
 }
 
 /**
@@ -33,7 +69,6 @@ bool do_system(const char *cmd)
 *   fork, waitpid, or execv() command, or if a non-zero return value was returned
 *   by the command issued in @param arguments with the specified arguments.
 */
-
 bool do_exec(int count, ...)
 {
     va_list args;
@@ -45,23 +80,61 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
+    int status;
+    pid_t pid;
+    bool ok = false;
+
+    TRYC(pid = fork(), "fork");
+    if (pid == 0)
+        do_exec_child(command);
+
+    TRYC(waitpid(pid, &status, 0), "waitpid");
+
+    if (WIFEXITED(status)) {
+        if (WEXITSTATUS(status) != 0) {
+            fprintf(
+                stderr,
+                "Command exited with status %d\n",
+                WEXITSTATUS(status));
+        } else {
+            ok = true;
+        }
+    } else if (WIFSIGNALED(status)) {
+        fprintf(
+            stderr,
+            "Command received signal %d\n",
+            WTERMSIG(status));
+        if (WCOREDUMP(status)) {
+            fprintf(stderr, "Command produced a core dump\n");
+        }
+    } else {
+        fprintf(stderr, "Unknown status %d\n", status);
+    }
 
     va_end(args);
 
-    return true;
+  done:
+    return ok;
+}
+
+void do_exec_redirect_child(const char *outputfile, char * const command[])
+{
+    int out_fd = -2;
+    TRYC(
+        out_fd = creat(outputfile, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH),
+        "creat");
+    TRYC(close(STDOUT_FILENO), "close");
+    TRYC(dup2(out_fd, STDOUT_FILENO), "dup2");
+    TRYC(close(out_fd), "close");
+    
+    TRYC(execv(command[0], command + 1), "execv");
+
+  done:
+    if (out_fd >= 0)
+        close(out_fd);
+
+    exit(EXIT_FAILURE);
 }
 
 /**
@@ -80,20 +153,40 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
+    int status;
+    pid_t pid;
+    bool ok = false;
 
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
+    TRYC(pid = fork(), "fork");
+    if (pid == 0)
+        do_exec_redirect_child(outputfile, command);
+
+    TRYC(waitpid(pid, &status, 0), "waitpid");
+
+    if (WIFEXITED(status)) {
+        if (WEXITSTATUS(status) != 0) {
+            fprintf(
+                stderr,
+                "Command exited with status %d\n",
+                WEXITSTATUS(status));
+        } else {
+            ok = true;
+        }
+    } else if (WIFSIGNALED(status)) {
+        fprintf(
+            stderr,
+            "Command received signal %d\n",
+            WTERMSIG(status));
+        if (WCOREDUMP(status)) {
+            fprintf(stderr, "Command produced a core dump\n");
+        }
+    } else {
+        fprintf(stderr, "Unknown status %d\n", status);
+    }
 
     va_end(args);
 
-    return true;
+  done:
+    return ok;
 }
