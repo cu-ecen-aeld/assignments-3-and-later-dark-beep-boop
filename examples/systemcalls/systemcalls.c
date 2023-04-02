@@ -9,17 +9,14 @@
 #include <unistd.h>
 #include <libgen.h>
 
-#define TRYC(expr, msg)                         \
-    if ((expr) == -1) {                         \
-        perror(msg);                            \
-        fprintf(                                \
-            stderr,                             \
-            "Error in file %s, line %d: %s\n",  \
-            basename(__FILE__),                 \
-            __LINE__,                           \
-            #expr);                             \
-        goto done;                              \
-    } NULL
+#define ELOG(format, ...)                                       \
+    fprintf(                                                    \
+        stderr,                                                 \
+        "ERROR (file=%s, line=%d, function=%s): " format "\n",  \
+        __FILE__,                                               \
+        __LINE__,                                               \
+        __func__,                                               \
+        __VA_ARGS__)
 
 #ifdef DEBUG
 #define DLOG(format, ...)                                           \
@@ -32,6 +29,19 @@
 #else
 #define DLOG(format, ...)
 #endif
+
+#define TRYC(expr, msg)                                         \
+    if ((expr) == -1) {                                         \
+        fprintf(                                                \
+            stderr,                                             \
+            "EXCEPTION (file=%s, line=%d, function=%s): %s\n",  \
+            __FILE__,                                           \
+            __LINE__,                                           \
+            __func__,                                           \
+            #expr);                                             \
+        perror("ERROR (" msg ")");                              \
+        goto done;                                              \
+    } NULL
 
 /**
  * @param cmd the command to execute with system()
@@ -48,10 +58,10 @@ bool do_system(const char *cmd)
     TRYC(status = system(cmd), "system");
 
     if (cmd == NULL && status == 0) {
-        fprintf(stderr, "Shell couldn't be created\n");
+        ELOG("Shell couldn't be created", NULL);
     } else if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) == 127) {
-            fprintf(stderr, "Command \"%s\" couldn't be executed\n", cmd);
+            ELOG("Command \"%s\" couldn't be executed\n", cmd);
         } else {
             ok = true;
         }
@@ -112,23 +122,17 @@ bool do_exec(int count, ...)
 
     if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) != 0) {
-            fprintf(
-                stderr,
-                "Command exited with status %d\n",
-                WEXITSTATUS(status));
+            ELOG("Command failed with status %d\n", WEXITSTATUS(status));
         } else {
             ok = true;
         }
     } else if (WIFSIGNALED(status)) {
-        fprintf(
-            stderr,
-            "Command received signal %d\n",
-            WTERMSIG(status));
+        ELOG("Command received signal %d\n", WTERMSIG(status));
         if (WCOREDUMP(status)) {
-            fprintf(stderr, "Command produced a core dump\n");
+            ELOG("Command produced a core dump\n", NULL);
         }
     } else {
-        fprintf(stderr, "Unknown status %d\n", status);
+        ELOG("Unknown status %d\n", status);
     }
 
     va_end(args);
@@ -192,23 +196,17 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 
     if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) != 0) {
-            fprintf(
-                stderr,
-                "Command exited with status %d\n",
-                WEXITSTATUS(status));
+            ELOG("Command exited with status %d\n", WEXITSTATUS(status));
         } else {
             ok = true;
         }
     } else if (WIFSIGNALED(status)) {
-        fprintf(
-            stderr,
-            "Command received signal %d\n",
-            WTERMSIG(status));
+        ELOG("Command received signal %d\n", WTERMSIG(status));
         if (WCOREDUMP(status)) {
-            fprintf(stderr, "Command produced a core dump\n");
+            ELOG("Command produced a core dump\n", NULL);
         }
     } else {
-        fprintf(stderr, "Unknown status %d\n", status);
+        ELOG("Unknown status %d\n", status);
     }
 
     va_end(args);
