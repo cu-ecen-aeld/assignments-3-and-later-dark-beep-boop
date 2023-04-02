@@ -26,7 +26,7 @@
 #ifdef DEBUG
 #define DLOG(format, ...)                                           \
     printf(                                                         \
-        "DEBUG(filename=%s, line=%d, function=%s):\t" format "\n",   \
+        "DEBUG(filename=%s, line=%d, function=%s): " format "\n",   \
         basename(__FILE__),                                         \
         __LINE__,                                                   \
         __func__,                                                   \
@@ -96,9 +96,9 @@ bool do_exec(int count, ...)
     }
     command[count] = NULL;
 
-    DLOG("count\t\t=%d", count);
+    DLOG("count = %d", count);
     for (i=0; i<count; i++) {
-        DLOG("command[%d]\t=%s", i, command[i]);
+        DLOG("command[%d] = %s", i, command[i]);
     }
 
     int status;
@@ -110,6 +110,7 @@ bool do_exec(int count, ...)
         do_exec_child(command);
 
     TRYC(waitpid(pid, &status, 0), "waitpid");
+    DLOG("Command exited, status = %d", status);
 
     if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) != 0) {
@@ -135,7 +136,7 @@ bool do_exec(int count, ...)
     va_end(args);
 
   done:
-    DLOG("do_exec done, ok=\t%d", ok);
+    DLOG("do_exec done, ok = %d", ok);
     return ok;
 }
 
@@ -175,9 +176,9 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     }
     command[count] = NULL;
 
-    DLOG("count\t\t=%d", count);
+    DLOG("count = %d", count);
     for (i=0; i<count; i++) {
-        DLOG("command[%d]\t=%s", i, command[i]);
+        DLOG("command[%d] = %s", i, command[i]);
     }
 
     int status;
@@ -189,6 +190,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         do_exec_redirect_child(outputfile, command);
 
     TRYC(waitpid(pid, &status, 0), "waitpid");
+    DLOG("Command exited, status = %d", status);
 
     if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) != 0) {
@@ -214,6 +216,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_end(args);
 
   done:
-    DLOG("do_exec_redirect done, ok=\t%d", ok);
+    DLOG("do_exec_redirect done, ok = %d", ok);
     return ok;
 }
+
