@@ -26,7 +26,7 @@
 #ifdef DEBUG
 #define DLOG(format, ...)                                           \
     printf(                                                         \
-        "DEBUG(filename=%s, line=%d, function=%s): " format "\n",   \
+        "DEBUG(filename=%s, line=%d, function=%s):\t" format "\n",   \
         basename(__FILE__),                                         \
         __LINE__,                                                   \
         __func__,                                                   \
@@ -96,7 +96,7 @@ bool do_exec(int count, ...)
     }
     command[count] = NULL;
 
-    DLOG("count\t=%d", count);
+    DLOG("count\t\t=%d", count);
     for (i=0; i<count; i++) {
         DLOG("command[%d]\t=%s", i, command[i]);
     }
@@ -175,7 +175,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     }
     command[count] = NULL;
 
-    DLOG("count\t=%d", count);
+    DLOG("count\t\t=%d", count);
     for (i=0; i<count; i++) {
         DLOG("command[%d]\t=%s", i, command[i]);
     }
