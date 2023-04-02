@@ -9,8 +9,6 @@
 #include <unistd.h>
 #include <libgen.h>
 
-#define DEBUG
-
 #define TRYC(expr, msg)                         \
     if ((expr) == -1) {                         \
         perror(msg);                            \
