@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <libgen.h>
 
 #define DEBUG
 
@@ -16,7 +17,7 @@
         fprintf(                                \
             stderr,                             \
             "Error in file %s, line %d: %s\n",  \
-            __FILE_NAME__,                      \
+            basename(__FILE__),                 \
             __LINE__,                           \
             #expr);                             \
         goto done;                              \
@@ -26,7 +27,7 @@
 #define DLOG(format, ...)                                           \
     printf(                                                         \
         "DEBUG(filename=%s, line=%d, function=%s): " format "\n",   \
-        __FILE_NAME__,                                              \
+        basename(__FILE__),                                         \
         __LINE__,                                                   \
         __func__,                                                   \
         __VA_ARGS__)
