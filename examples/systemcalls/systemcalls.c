@@ -58,10 +58,10 @@ bool do_system(const char *cmd)
     TRYC(status = system(cmd), "system");
 
     if (cmd == NULL && status == 0) {
-        ELOG("Shell couldn't be created", NULL);
+        ELOG("%s","Shell couldn't be created");
     } else if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) == 127) {
-            ELOG("Command \"%s\" couldn't be executed\n", cmd);
+            ELOG("Command \"%s\" couldn't be executed", cmd);
         } else {
             ok = true;
         }
@@ -122,17 +122,17 @@ bool do_exec(int count, ...)
 
     if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) != 0) {
-            ELOG("Command failed with status %d\n", WEXITSTATUS(status));
+            ELOG("Command failed with status %d", WEXITSTATUS(status));
         } else {
             ok = true;
         }
     } else if (WIFSIGNALED(status)) {
-        ELOG("Command received signal %d\n", WTERMSIG(status));
+        ELOG("Command received signal %d", WTERMSIG(status));
         if (WCOREDUMP(status)) {
-            ELOG("Command produced a core dump\n", NULL);
+            ELOG("%s", "Command produced a core dump");
         }
     } else {
-        ELOG("Unknown status %d\n", status);
+        ELOG("Unknown status %d", status);
     }
 
     va_end(args);
@@ -196,17 +196,17 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 
     if (WIFEXITED(status)) {
         if (WEXITSTATUS(status) != 0) {
-            ELOG("Command exited with status %d\n", WEXITSTATUS(status));
+            ELOG("Command exited with status %d", WEXITSTATUS(status));
         } else {
             ok = true;
         }
     } else if (WIFSIGNALED(status)) {
-        ELOG("Command received signal %d\n", WTERMSIG(status));
+        ELOG("Command received signal %d", WTERMSIG(status));
         if (WCOREDUMP(status)) {
-            ELOG("Command produced a core dump\n", NULL);
+            ELOG("%s","Command produced a core dump");
         }
     } else {
-        ELOG("Unknown status %d\n", status);
+        ELOG("Unknown status %d", status);
     }
 
     va_end(args);
