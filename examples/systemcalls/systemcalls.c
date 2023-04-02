@@ -65,7 +65,7 @@ bool do_system(const char *cmd)
 
 void do_exec_child(char * const command[])
 {
-    TRYC(execv(command[0], command + 1), "execv");
+    TRYC(execv(command[0], command), "execv");
 
   done:
     exit(EXIT_FAILURE);
@@ -150,7 +150,7 @@ void do_exec_redirect_child(const char *outputfile, char * const command[])
     TRYC(dup2(out_fd, STDOUT_FILENO), "dup2");
     TRYC(close(out_fd), "close");
     
-    TRYC(execv(command[0], command + 1), "execv");
+    TRYC(execv(command[0], command), "execv");
 
   done:
     if (out_fd >= 0)
