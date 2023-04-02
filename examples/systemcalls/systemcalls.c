@@ -8,17 +8,31 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define DEBUG
+
 #define TRYC(expr, msg)                         \
     if ((expr) == -1) {                         \
         perror(msg);                            \
         fprintf(                                \
             stderr,                             \
             "Error in file %s, line %d: %s\n",  \
-            __FILE__,                           \
+            __FILE_NAME__,                      \
             __LINE__,                           \
             #expr);                             \
         goto done;                              \
     } NULL
+
+#ifdef DEBUG
+#define DLOG(format, ...)                                           \
+    printf(                                                         \
+        "DEBUG(filename=%s, line=%d, function=%s): " format "\n",   \
+        __FILE_NAME__,                                              \
+        __LINE__,                                                   \
+        __func__,                                                   \
+        __VA_ARGS__)
+#else
+#define DLOG(format, ...)
+#endif
 
 /**
  * @param cmd the command to execute with system()
@@ -81,6 +95,11 @@ bool do_exec(int count, ...)
     }
     command[count] = NULL;
 
+    DLOG("count\t=%d", count);
+    for (i=0; i<count; i++) {
+        DLOG("command[%d]\t=%s", i, command[i]);
+    }
+
     int status;
     pid_t pid;
     bool ok = false;
@@ -115,6 +134,7 @@ bool do_exec(int count, ...)
     va_end(args);
 
   done:
+    DLOG("do_exec done, ok=\t%d", ok);
     return ok;
 }
 
@@ -154,6 +174,11 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     }
     command[count] = NULL;
 
+    DLOG("count\t=%d", count);
+    for (i=0; i<count; i++) {
+        DLOG("command[%d]\t=%s", i, command[i]);
+    }
+
     int status;
     pid_t pid;
     bool ok = false;
@@ -188,5 +213,6 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_end(args);
 
   done:
+    DLOG("do_exec_redirect done, ok=\t%d", ok);
     return ok;
 }
