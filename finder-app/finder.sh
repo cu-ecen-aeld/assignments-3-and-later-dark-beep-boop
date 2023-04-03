@@ -1,3 +1,4 @@
+#!/bin/sh
 
 if [ $# -lt 2 ]; then
 	printf 'Usage: %s <filesdir> <searchstr>\n' $0
