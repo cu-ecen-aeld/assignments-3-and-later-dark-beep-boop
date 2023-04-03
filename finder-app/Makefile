@@ -21,4 +21,6 @@ install:
 	install $(BUILD_DIR)/$(TARGET_EXEC) $(DST_DIR)/$(TARGET_EXEC)
 
 clean:
-	rm $(BUILD_DIR)/$(TARGET_EXEC).o $(BUILD_DIR)/$(TARGET_EXEC)
+		rm -f $(BUILD_DIR)/$(TARGET_EXEC).o
+		rm -f $(BUILD_DIR)/$(TARGET_EXEC)
+
