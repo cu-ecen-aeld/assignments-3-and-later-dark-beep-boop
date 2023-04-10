@@ -6,7 +6,9 @@ DST_DIR := .
 
 CC := $(CROSS_COMPILE)gcc
 
-.PHONY: install clean
+.PHONY: all install clean
+
+all: $(BUILD_DIR)/$(TARGET_EXEC)
 
 $(BUILD_DIR)/$(TARGET_EXEC): %: %.o
 	mkdir -p $(dir $@)
