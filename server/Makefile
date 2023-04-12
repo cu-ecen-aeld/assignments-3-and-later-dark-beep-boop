@@ -5,7 +5,7 @@ SRC_DIR := .
 DST_DIR := .
 
 CC := $(CROSS_COMPILE)gcc
-CFLAGS := -g -Wall -Werror
+#CFLAGS := -g -Wall -Werror
 
 .PHONY: all install clean
 

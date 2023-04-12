@@ -14,8 +14,31 @@
 #include <sys/socket.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <errno.h>
 
-#include "try.h"
+#define TRY_GETADDRINFO(expr, status)                             \
+  if ((status = expr) != 0) {                                     \
+    syslog(                                                       \
+        LOG_ERR,                                                  \
+        "GETADDRINFO ERROR (file=%s, line=%d, function=%s): %s\n",\
+        __FILE__,                                                 \
+        __LINE__,                                                 \
+        __func__,                                                 \
+        gai_strerror(curr_status));                               \
+    goto done;                                                    \
+  }
+
+#define TRYC(expr)                                      \
+  if ((expr) == -1) {                                   \
+    syslog(                                             \
+        LOG_ERR,                                        \
+        "ERROR (file=%s, line=%d, function=%s): %s\n",  \
+        __FILE__,                                       \
+        __LINE__,                                       \
+        __func__,                                       \
+        strerror(errno));                               \
+    goto done;                                          \
+  }
 
 void *
 get_in_addr(struct sockaddr *sa)
@@ -39,45 +62,39 @@ main()
   int fd = 0;
   int sockfd = 0;
   int curr_status;
-  int linesize = 0;
+  //int linesize = 0;
   int yes = 1;
-  int written = 0;
+  //int written = 0;
   char remote_name[INET6_ADDRSTRLEN];
   char buffer[256];
   char *line = NULL;
-  const char port[] = "9000";
   const char filename[] = "/var/tmp/aesdsocketdata";
   socklen_t addr_size;
-  struct addrinfo hints;
-  struct addrinfo *servinfo = NULL;
   struct sockaddr_storage remote_addr;
   
+  /* Socket initialization */
+  const char port[] = "9000";
+  struct addrinfo hints;
+  struct addrinfo *servinfo = NULL;
   memset(buffer, 0, sizeof buffer);
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
 
-  if ((curr_status = getaddrinfo(NULL, port, &hints, &servinfo)) != 0) {
-    fprintf(
-        stderr,
-        "GETADDRINFO ERROR (file=%s, line=%d, function=%s): %s\n",
-        __FILE__,
-        __LINE__,
-        __func__,
-        gai_strerror(curr_status));
-    goto done;
-  }
-
-  TRY_NONNEG(sockfd = socket(
+  TRY_GETADDRINFO(getaddrinfo(NULL, port, &hints, &servinfo), curr_status);
+  TRYC(sockfd = socket(
       servinfo->ai_family,
       servinfo->ai_socktype,
       servinfo->ai_protocol));
-  TRY_NONNEG(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)));
-  TRY_NONNEG(bind(sockfd, servinfo->ai_addr, servinfo->ai_addrlen));
-  TRY_NONNEG(listen(sockfd, backlog));
+  TRYC(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)));
+  TRYC(bind(sockfd, servinfo->ai_addr, servinfo->ai_addrlen));
+  TRYC(listen(sockfd, backlog));
 
-  TRY_NONNEG(fd = open(
+  syslog(LOG_DEBUG, "sockfd: %d\n", sockfd);
+
+  TRYC(conn_sockfd = accept(sockfd, (struct sockaddr *) &remote_addr, &addr_size));
+  /*TRY_NONNEG(fd = open(
     filename,
     O_RDWR | O_APPEND | O_CREAT,
     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
@@ -92,8 +109,10 @@ main()
       remote_name,
       sizeof remote_name);
   syslog(LOG_DEBUG, "Accepted connection from %s\n", remote_name);
+  */
 
   /* net to file */
+  /*
   size_t pos = sizeof buffer;
   while (pos == sizeof buffer) {
     TRY_NONNEG(curr_status = recv(conn_sockfd, buffer, sizeof buffer, 0));
@@ -119,8 +138,10 @@ main()
   free(line);
   linesize = 0;
   memset(buffer, 0, sizeof buffer);
+  */
 
   /* file to net */
+  /*
   TRY_NONNEG(lseek(fd, 0, SEEK_SET));
 
   pos = sizeof buffer;
@@ -148,6 +169,7 @@ main()
     memcpy(line + linesize, buffer, pos);
     linesize += pos;
   }
+  */
 
   exit_status = EXIT_SUCCESS;
 
