@@ -12,6 +12,7 @@
 #include <sys/syslog.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <errno.h>
