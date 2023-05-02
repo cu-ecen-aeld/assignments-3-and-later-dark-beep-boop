@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <asm-generic/errno-base.h>
+#include <asm-generic/errno.h>
 #include <asm-generic/socket.h>
 #include <stdbool.h>
 #include <fcntl.h>
@@ -18,51 +19,169 @@
 #include <errno.h>
 #include <signal.h>
 
+#include "try.h"
+
 #define PORT "9000"
 #define BACKLOG 20
 #define FILENAME "/var/tmp/aesdsocketdata"
 #define BUFFSIZE 1024
 
-#define TRY_GETADDRINFO(expr, status)                             \
-  if ((status = expr) != 0) {                                     \
-    syslog(                                                       \
-        LOG_ERR,                                                  \
-        "GETADDRINFO ERROR (file=%s, line=%d, function=%s): %s\n",\
-        __FILE__,                                                 \
-        __LINE__,                                                 \
-        __func__,                                                 \
-        gai_strerror(status));                                    \
-    goto done;                                                    \
-  } NULL
+static bool terminate = false;
 
-#define TRYC(expr)                                      \
-  if ((expr) == -1) {                                   \
-    syslog(                                             \
-        LOG_ERR,                                        \
-        "ERROR (file=%s, line=%d, function=%s): %s\n",  \
-        __FILE__,                                       \
-        __LINE__,                                       \
-        __func__,                                       \
-        strerror(errno));                               \
-    goto done;                                          \
-  } NULL
+void handler(int signo);
+void recv_and_send(int socket_fd, int writer_fd);
+void recv_packet(int socket_fd, int writer_fd);
+void send_file(int socket_fd);
+void *get_in_addr(struct sockaddr *sa);
+bool open_listening_socket(int *sockfd, const char *port, int backlog);
+bool daemonize(void);
 
-#define TRY(expr)                                       \
-  if ((expr) == 0) {                                    \
-    syslog(                                             \
-        LOG_ERR,                                        \
-        "ERROR (file=%s, line=%d, function=%s): %s\n",  \
-        __FILE__,                                       \
-        __LINE__,                                       \
-        __func__,                                       \
-        #expr);                                         \
-    goto done;                                          \
-  } NULL
+int
+main(int argc, char *argv[])
+{
+  int exit_status = EXIT_FAILURE;
+  bool daemon = false;
 
-bool terminate = false;
+  if (argc > 1) {
+    if (argc == 2 && strncmp(argv[1], "-d", 2) == 0) {
+      daemon = true;
+    } else {
+      syslog(LOG_ERR, "ERROR: wrong arguments\n");
+      return EXIT_FAILURE;
+    }
+  }
+
+  struct sigaction action;
+  memset(&action, 0, sizeof(struct sigaction));
+  action.sa_handler = handler;
+  TRYC(sigaction(SIGTERM, &action, NULL));
+  TRYC(sigaction(SIGINT, &action, NULL));
+
+  if (daemon)
+    TRY(daemonize());
+
+  int fd;
+  TRYC(fd = open(
+    FILENAME,
+    O_RDWR | O_APPEND | O_CREAT,
+    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+
+  int sockfd;
+  TRY(open_listening_socket(&sockfd, PORT, BACKLOG));
+
+  int conn_sockfd;
+  char remote_name[INET6_ADDRSTRLEN];
+  socklen_t addr_size;
+  struct sockaddr_storage remote_addr;
+
+  while (!terminate) {
+    TRYC_NONBLOCK(
+        conn_sockfd = accept(
+            sockfd,
+            (struct sockaddr *) &remote_addr,
+            &addr_size),
+        continue);
+
+    inet_ntop(
+        remote_addr.ss_family,
+        get_in_addr((struct sockaddr *) &remote_addr),
+        remote_name,
+        sizeof remote_name);
+    syslog(LOG_DEBUG, "Accepted connection from %s\n", remote_name);
+
+    recv_and_send(conn_sockfd, fd);
+
+    close(conn_sockfd);
+    syslog(LOG_DEBUG, "Closed connection from %s\n", remote_name);
+  }
+
+  exit_status = EXIT_SUCCESS;
+
+done:
+  remove(FILENAME);
+
+  if (conn_sockfd)
+    close(conn_sockfd);
+
+  if (sockfd)
+    close(sockfd);
+
+  exit(exit_status);
+}
 
 void
-handler (int signo)
+recv_and_send(int socket_fd, int writer_fd)
+{
+  recv_packet(socket_fd, writer_fd);
+  send_file(socket_fd);
+}
+
+bool
+daemonize(void)
+{
+  bool ok = false;
+
+  pid_t daemon_pid;
+  TRYC(daemon_pid = fork());
+
+  if (daemon_pid != 0)
+    exit(EXIT_SUCCESS);
+
+  TRYC(setsid());
+
+  TRYC(chdir("/"));
+
+  for (int i = 0; i < 3; ++i)
+    close(i);
+
+  open("/dev/null", O_RDWR);
+  dup(0);
+  dup(0);
+
+  ok = true;
+
+done:
+  return ok;
+}
+
+bool
+open_listening_socket(int *sockfd, const char *port, int backlog)
+{
+  bool ok = false;
+  int sockfd_test;
+  int status;
+  int yes = 1;
+  struct addrinfo hints;
+  struct addrinfo *servinfo = NULL;
+
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = AI_PASSIVE;
+
+  TRY_GETADDRINFO(getaddrinfo(NULL, PORT, &hints, &servinfo), status);
+
+  TRYC(sockfd_test = socket(servinfo->ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0));
+  TRYC(setsockopt(sockfd_test, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)));
+
+  TRYC(bind(sockfd_test, servinfo->ai_addr, servinfo->ai_addrlen));
+  TRYC(listen(sockfd_test, BACKLOG));
+
+  ok = true;
+  *sockfd = sockfd_test;
+ 
+done:
+  if (!ok && sockfd_test != -1)
+    close(sockfd_test);
+
+  if (servinfo)
+    freeaddrinfo(servinfo);
+
+  return ok;
+}
+
+void
+handler(int signo)
 {
   if (signo == SIGTERM || signo == SIGINT) {
     syslog(LOG_DEBUG, "Caught signal, exiting\n");
@@ -71,7 +190,7 @@ handler (int signo)
 }
 
 void
-write_line(int socket_fd, int writer_fd) {
+recv_packet(int socket_fd, int writer_fd) {
   ssize_t bytes_read, bytes_written;
   char buffer[BUFFSIZE] = {};
   bool eol = false;
@@ -114,7 +233,7 @@ write_line(int socket_fd, int writer_fd) {
 }
 
 void
-send_contents(int socket_fd) {
+send_file(int socket_fd) {
   ssize_t bytes_read, bytes_written;
   char buffer[BUFFSIZE] = "";
   int fd;
@@ -162,139 +281,10 @@ get_in_addr(struct sockaddr *sa)
 
   if (sa->sa_family == AF_INET)
     result = &(((struct sockaddr_in*)sa)->sin_addr);
-  else
+  else if (sa->sa_family == AF_INET6)
     result = &(((struct sockaddr_in6*)sa)->sin6_addr);
 
   return result;
 }
 
-int
-main(int argc, char *argv[])
-{
-  int exit_status = -1;
-
-  struct sigaction action;
-  memset(&action,0,sizeof(struct sigaction));
-  action.sa_handler=handler;
-  if(sigaction(SIGTERM, &action, NULL) != 0) {
-    syslog(
-        LOG_ERR,
-        "ERROR (file=%s, line=%d, function=%s): %s\n",
-        __FILE__,
-        __LINE__,
-        __func__,
-        "recv");
-    goto done;
-  }
-  if(sigaction(SIGINT, &action, NULL) != 0) {
-    syslog(
-        LOG_ERR,
-        "ERROR (file=%s, line=%d, function=%s): %s\n",
-        __FILE__,
-        __LINE__,
-        __func__,
-        "recv");
-    goto done;
-  }
-
-  /* Socket initialization */
-  struct addrinfo hints;
-  struct addrinfo *servinfo = NULL;
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_flags = AI_PASSIVE;
-
-  int status;
-  TRY_GETADDRINFO(getaddrinfo(NULL, PORT, &hints, &servinfo), status);
-
-  int sockfd;
-  TRYC(sockfd = socket(
-    servinfo->ai_family,
-    SOCK_STREAM | SOCK_NONBLOCK,
-    0));
-
-  int yes = 1;
-  TRYC(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)));
-
-  TRYC(bind(sockfd, servinfo->ai_addr, servinfo->ai_addrlen));
-  TRYC(listen(sockfd, BACKLOG));
-
-  pid_t daemon_pid;
-  if (argc == 2) {
-    if(strcmp(argv[1], "-d") == 0){
-      daemon_pid = fork();
-      if (daemon_pid == -1)
-        return -1;
-      else if (daemon_pid != 0)
-        exit(EXIT_SUCCESS);
-
-      setsid();
-      chdir("/");
-      open("/dev/null",O_RDWR);
-      dup(0);
-      dup(0);
-    }
-  }
-
-  int fd;
-  TRYC(fd = open(
-    FILENAME,
-    O_RDWR | O_APPEND | O_CREAT,
-    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
-
-  int conn_sockfd;
-  char remote_name[INET6_ADDRSTRLEN];
-  socklen_t addr_size;
-  struct sockaddr_storage remote_addr;
-
-  while (1) {
-    if (terminate)
-      goto done;
-
-    if ((conn_sockfd = accept(
-      sockfd,
-      (struct sockaddr *) &remote_addr,
-      &addr_size)) == -1) {
-      if (errno == EAGAIN) {
-        usleep(5000);
-        continue;
-      } else {
-        syslog(
-            LOG_ERR,
-            "ERROR (file=%s, line=%d, function=%s): %s\n",
-            __FILE__,
-            __LINE__,
-            __func__,
-            strerror(errno));
-        goto done;
-      }
-    }
-
-    inet_ntop(
-        remote_addr.ss_family,
-        get_in_addr((struct sockaddr *) &remote_addr),
-        remote_name,
-        sizeof remote_name);
-    syslog(LOG_DEBUG, "Accepted connection from %s\n", remote_name);
-
-    write_line(conn_sockfd, fd);
-    send_contents(conn_sockfd);
-
-    close(conn_sockfd);
-    syslog(LOG_DEBUG, "Closed connection from %s\n", remote_name);
-  }
-
-  exit_status = EXIT_SUCCESS;
-
-done:
-  remove(FILENAME);
-  if (conn_sockfd)
-    close(conn_sockfd);
-  if (sockfd)
-    close(sockfd);
-  if (servinfo)
-    freeaddrinfo(servinfo);
-  exit(exit_status);
-}
 
