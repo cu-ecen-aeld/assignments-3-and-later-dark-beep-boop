@@ -5,6 +5,22 @@
 #include <sys/socket.h>
 #include <syslog.h>
 
+#define TRYC_INTR(expr, action)                             \
+  if ((expr) == -1) {                                       \
+    if (errno == EINTR) {                                   \
+      action;                                               \
+    } else {                                                \
+      syslog(                                               \
+          LOG_ERR,                                          \
+          "ERROR (file=%s, line=%d, function=%s): %s\n",    \
+          __FILE__,                                         \
+          __LINE__,                                         \
+          __func__,                                         \
+          strerror(errno));                                 \
+      goto done;                                            \
+    }                                                       \
+  } NULL
+
 #define TRYC_NONBLOCK(expr, action)                         \
   if ((expr) == -1) {                                       \
     if (errno == EAGAIN || errno == EWOULDBLOCK) {          \
