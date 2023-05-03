@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <sys/socket.h>
 
-void handler(int signo);
+void terminate_handler(int signo);
 bool recv_and_send(int socket_fd, int file_fd);
 bool recv_and_write_line(int file_fd, int socket_fd);
 bool recv_line(int socket_fd, char **line);

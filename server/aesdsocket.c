@@ -47,7 +47,7 @@ main(int argc, char *argv[])
 
   struct sigaction action;
   memset(&action, 0, sizeof action);
-  action.sa_handler = handler;
+  action.sa_handler = terminate_handler;
   sigemptyset(&action.sa_mask);
   TRYC(sigaddset(&action.sa_mask, SIGTERM));
   TRYC(sigaddset(&action.sa_mask, SIGINT));
@@ -90,6 +90,8 @@ main(int argc, char *argv[])
     close(conn_sockfd);
     syslog(LOG_DEBUG, "Closed connection from %s\n", remote_name);
   }
+
+  syslog(LOG_DEBUG, "Caught signal, exiting\n");
 
   exit_status = EXIT_SUCCESS;
 
@@ -185,12 +187,9 @@ done:
 }
 
 void
-handler(int signo)
+terminate_handler(int signo)
 {
-  if (signo == SIGTERM || signo == SIGINT) {
-    syslog(LOG_DEBUG, "Caught signal, exiting\n");
-    terminate = true;
-  }
+  terminate = true;
 }
 
 bool
