@@ -91,8 +91,6 @@ main(int argc, char *argv[])
     syslog(LOG_DEBUG, "Closed connection from %s\n", remote_name);
   }
 
-  syslog(LOG_DEBUG, "Caught signal, exiting\n");
-
   exit_status = EXIT_SUCCESS;
 
 done:
@@ -189,6 +187,8 @@ done:
 void
 terminate_handler(int signo)
 {
+  syslog(LOG_DEBUG, "Caught signal, exiting\n");
+
   terminate = true;
 }
 
