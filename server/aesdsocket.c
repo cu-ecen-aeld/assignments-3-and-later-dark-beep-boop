@@ -74,7 +74,7 @@ main(int argc, char *argv[])
   struct sockaddr_storage remote_addr;
 
   while (!terminate) {
-    TRYC_RETRY_ON_EINTR(
+    TRYC_CONTINUE_ON_EINTR(
         conn_sockfd =
             accept(sockfd, (struct sockaddr *) &remote_addr, &addr_size));
 

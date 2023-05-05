@@ -39,7 +39,36 @@
   TRYC_RETRY(expr, retry_condition, strerror(errno))
 
 #define TRY_RETRY_ON_EINTR(expr) TRY_RETRY_ERRNO(expr, errno == EINTR)
+
 #define TRYC_RETRY_ON_EINTR(expr) TRYC_RETRY_ERRNO(expr, errno == EINTR)
+
+#define TRYCATCH_CONTINUE(                                            \
+    error_condition, error_action, continue_condition, error_message) \
+  if (error_condition) {                                              \
+    if (continue_condition) {                                         \
+      continue;                                                       \
+    } else {                                                          \
+      LOG_ERROR(error_message);                                       \
+      error_action;                                                   \
+    }                                                                 \
+  }                                                                   \
+  NULL
+
+#define TRY_CONTINUE(expr, continue_condition, error_message) \
+  TRYCATCH_CONTINUE(!(expr), goto done, continue_condition, error_message)
+
+#define TRYC_CONTINUE(expr, continue_condition, error_message) \
+  TRYCATCH_CONTINUE((expr) == -1, goto done, continue_condition, error_message)
+
+#define TRY_CONTINUE_ERRNO(expr, continue_condition) \
+  TRY_CONTINUE(expr, continue_condition, strerror(errno))
+
+#define TRYC_CONTINUE_ERRNO(expr, continue_condition) \
+  TRYC_CONTINUE(expr, continue_condition, strerror(errno))
+
+#define TRY_CONTINUE_ON_EINTR(expr) TRY_CONTINUE_ERRNO(expr, errno == EINTR)
+
+#define TRYC_CONTINUE_ON_EINTR(expr) TRYC_CONTINUE_ERRNO(expr, errno == EINTR)
 
 #define TRYCATCH(condition, action, message) \
   if (condition) {                           \
