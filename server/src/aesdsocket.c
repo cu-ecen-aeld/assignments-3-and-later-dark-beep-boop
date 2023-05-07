@@ -21,7 +21,6 @@
 #include <sys/syslog.h>
 #include <sys/types.h>
 #include <syslog.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "monitor.h"
@@ -168,16 +167,16 @@ aesdsocket_start_thread(void *arg)
       "thread execution failed");
 
 done:
+  if (conn_sockfd != -1)
+    close(conn_sockfd);
+
+  syslog(LOG_DEBUG, "Closed connection from %s\n", remote_name);
+
   if (filename)
     free(filename);
 
   if (remote_name)
     free(remote_name);
-
-  if (conn_sockfd != -1)
-    close(conn_sockfd);
-
-  syslog(LOG_DEBUG, "Closed connection from %s\n", remote_name);
 
   return NULL;
 }
@@ -243,8 +242,8 @@ aesdsocket_recv_line(int socket_fd, char **line)
   if (*line)
     line_buffer = *line;
 
-  while (!eol) {
-    TRYC_RETRY_ON_EINTR(bytes_read = recv(socket_fd, buffer, BUFFSIZE, 0));
+  while (!eol && !terminate) {
+    TRYC_CONTINUE_ON_EINTR(bytes_read = recv(socket_fd, buffer, BUFFSIZE, 0));
     if (bytes_read) {
       ssize_t useful_bytes;
       char *newline_pointer = NULL;
@@ -266,7 +265,8 @@ aesdsocket_recv_line(int socket_fd, char **line)
     }
   }
 
-  line_buffer[line_buffer_size] = '\0';
+  if (line_buffer)
+    line_buffer[line_buffer_size] = '\0';
 
   ok = true;
   *line = line_buffer;
@@ -392,7 +392,7 @@ aesdsocket_send_line(int socket_fd, const char *line)
   bool ok = false;
   size_t bytes_to_send = strlen(line);
 
-  while (bytes_to_send > 0) {
+  while (bytes_to_send > 0 && !terminate) {
     ssize_t bytes_sent;
     TRYC_RETRY_ON_EINTR(
         bytes_sent = send(
@@ -416,8 +416,8 @@ aesdsocket_mainloop(
   int sockfd = -1;
   int conn_sockfd = -1;
   char remote_name[INET6_ADDRSTRLEN] = {};
-  socklen_t addr_size;
   struct sockaddr_storage remote_addr;
+  socklen_t addr_size = sizeof(struct sockaddr_storage);
   queue_t *thread_queue = NULL;
   monitor_t *file_monitor = NULL;
   aesdsocket_thread_arg_t *thread_arg = NULL;
@@ -450,11 +450,10 @@ aesdsocket_mainloop(
         conn_sockfd =
             accept(sockfd, (struct sockaddr *) &remote_addr, &addr_size));
 
+    const char *in_addr =
+        aesdsocket_get_in_addr((struct sockaddr *) &remote_addr);
     TRY_ERRNO(inet_ntop(
-        remote_addr.ss_family,
-        aesdsocket_get_in_addr((struct sockaddr *) &remote_addr),
-        remote_name,
-        sizeof remote_name));
+        remote_addr.ss_family, in_addr, remote_name, sizeof remote_name));
 
     TRY_ALLOCATE(thread_arg, aesdsocket_thread_arg_t);
     thread_arg->conn_sockfd = conn_sockfd;

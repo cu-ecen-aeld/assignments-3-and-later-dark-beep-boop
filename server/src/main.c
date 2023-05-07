@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/syslog.h>
 #include <unistd.h>
 
 #include "aesdsocket.h"
@@ -17,6 +18,8 @@ main(int argc, char *argv[])
 {
   int exit_status = EXIT_FAILURE;
   bool daemon = false;
+
+  openlog("aesdsocket", LOG_CONS | LOG_PERROR | LOG_PID, LOG_USER);
 
   if (argc > 1) {
     if (argc == 2 && strncmp(argv[1], "-d", 2) == 0) {

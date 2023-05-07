@@ -94,7 +94,7 @@ void
 doubly_linked_list_insert_node_in_head(
     doubly_linked_list_t *self, node_t *new_node)
 {
-  assert(doubly_linked_list_is_empty(self));
+  assert(!doubly_linked_list_is_empty(self));
 
   node_link_next(new_node, self->head);
   node_link_prev(self->head, new_node);
@@ -106,7 +106,7 @@ void
 doubly_linked_list_insert_node_in_tail(
     doubly_linked_list_t *self, node_t *new_node)
 {
-  assert(doubly_linked_list_is_empty(self));
+  assert(!doubly_linked_list_is_empty(self));
 
   node_link_prev(new_node, self->tail);
   node_link_next(self->tail, new_node);
@@ -118,6 +118,8 @@ void
 doubly_linked_list_insert_node(
     doubly_linked_list_t *self, size_t pos, node_t *new_node)
 {
+  assert(pos < doubly_linked_list_size(self));
+
   node_t *current = doubly_linked_list_get_node(self, pos);
 
   node_link_prev(new_node, current);
@@ -298,7 +300,10 @@ doubly_linked_list_insert_head(doubly_linked_list_t *self, pthread_t tid)
   TRY(new_node = node_new(), "couldn't create a new node");
   node_set(new_node, tid);
 
-  doubly_linked_list_insert_node_in_head(self, new_node);
+  if (doubly_linked_list_is_empty(self))
+    doubly_linked_list_insert_node_when_empty(self, new_node);
+  else
+    doubly_linked_list_insert_node_in_head(self, new_node);
 
   ok = true;
 
@@ -339,7 +344,7 @@ doubly_linked_list_remove(doubly_linked_list_t *self, size_t pos)
 pthread_t
 doubly_linked_list_remove_head(doubly_linked_list_t *self)
 {
-  assert(doubly_linked_list_is_empty(self));
+  assert(!doubly_linked_list_is_empty(self));
 
   node_t *head = doubly_linked_list_remove_head_node(self);
   pthread_t tid = node_get(head);
@@ -352,7 +357,7 @@ doubly_linked_list_remove_head(doubly_linked_list_t *self)
 pthread_t
 doubly_linked_list_remove_tail(doubly_linked_list_t *self)
 {
-  assert(doubly_linked_list_is_empty(self));
+  assert(!doubly_linked_list_is_empty(self));
 
   node_t *tail = doubly_linked_list_remove_tail_node(self);
   pthread_t tid = node_get(tail);
