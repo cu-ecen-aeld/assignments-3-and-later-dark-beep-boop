@@ -1,6 +1,10 @@
+#ifndef TRY_H
+#define TRY_H
+
 #include <errno.h>
 #include <netdb.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -87,13 +91,37 @@
 
 #define TRY_GETADDRINFO(node, service, hints, res, status_var)      \
   if ((status_var = getaddrinfo(node, service, hints, res)) != 0) { \
-    syslog(                                                         \
-        LOG_ERR,                                                    \
-        "GETADDRINFO ERROR (file=%s, line=%d, function=%s): %s\n",  \
-        __FILE__,                                                   \
-        __LINE__,                                                   \
-        __func__,                                                   \
-        gai_strerror(status_var));                                  \
+    LOG_ERROR(gai_strerror(status_var));                            \
     goto done;                                                      \
   }                                                                 \
   NULL
+
+#define TRY_ALLOCATE_MANY(dest, type, number) \
+  TRY_ERRNO((dest) = (type *) malloc(sizeof(type) * (number)))
+
+#define TRY_ALLOCATE(dest, type) TRY_ALLOCATE_MANY(dest, type, 1)
+
+#define TRY_PTHREAD_CREATE(thread, attr, start_routine, arg, status_var) \
+  if ((status_var = pthread_create(thread, attr, start_routine, arg))) { \
+    errno = status_var;                                                  \
+    LOG_ERROR(strerror(errno));                                          \
+    goto done;                                                           \
+  }                                                                      \
+  NULL
+
+#define TRY_PTHREAD_JOIN_NOACTION(thread, retval, status_var) \
+  if ((status_var = pthread_join(thread, retval))) {          \
+    errno = status_var;                                       \
+    LOG_ERROR(strerror(errno));                               \
+  }                                                           \
+  NULL
+
+#define TRY_PTHREAD_JOIN(thread, retval, status_var) \
+  if ((status_var = pthread_join(thread, retval))) { \
+    errno = status_var;                              \
+    LOG_ERROR(strerror(errno));                      \
+    goto done;                                       \
+  }                                                  \
+  NULL
+
+#endif /* TRY_H */
