@@ -217,8 +217,10 @@ aesdsocket_recv_and_write_line(
   char *line = NULL;
 
   TRY(aesdsocket_recv_line(socket_fd, &line), "line reception failed");
-  TRY(aesdsocket_write_line(file_fd, line, file_monitor),
-      "line writing failed");
+  if (line) {
+    TRY(aesdsocket_write_line(file_fd, line, file_monitor),
+        "line writing failed");
+  }
 
   ok = true;
 
@@ -466,6 +468,8 @@ aesdsocket_mainloop(
     int status;
     TRY_PTHREAD_CREATE(&tid, NULL, aesdsocket_start_thread, thread_arg, status);
     TRY(queue_enqueue(thread_queue, tid), "tid enqueue failed");
+    conn_sockfd = -1;
+    thread_arg = NULL;
   }
 
   ok = true;

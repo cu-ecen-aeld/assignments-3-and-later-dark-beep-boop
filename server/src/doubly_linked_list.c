@@ -23,11 +23,12 @@ static void doubly_linked_list_insert_node_in_head(
     doubly_linked_list_t *self, node_t *new_node);
 static void doubly_linked_list_insert_node_in_tail(
     doubly_linked_list_t *self, node_t *new_node);
-static void doubly_linked_list_insert_node(
+static void doubly_linked_list_insert_middle_node(
     doubly_linked_list_t *self, size_t pos, node_t *new_node);
+static node_t *doubly_linked_list_remove_last_node(doubly_linked_list_t *self);
 static node_t *doubly_linked_list_remove_head_node(doubly_linked_list_t *self);
 static node_t *doubly_linked_list_remove_tail_node(doubly_linked_list_t *self);
-static node_t *doubly_linked_list_remove_node(
+static node_t *doubly_linked_list_remove_middle_node(
     doubly_linked_list_t *self, size_t pos);
 
 void
@@ -115,54 +116,71 @@ doubly_linked_list_insert_node_in_tail(
 }
 
 void
-doubly_linked_list_insert_node(
+doubly_linked_list_insert_middle_node(
     doubly_linked_list_t *self, size_t pos, node_t *new_node)
 {
-  assert(pos < doubly_linked_list_size(self));
+  assert(pos > 0 && pos < doubly_linked_list_size(self));
 
-  node_t *current = doubly_linked_list_get_node(self, pos);
+  node_t *node_in_pos = doubly_linked_list_get_node(self, pos);
 
-  node_link_prev(new_node, current);
-  node_link_next(new_node, current);
-  node_link_next(node_prev(current), new_node);
-  node_link_prev(current, new_node);
+  node_link_prev(new_node, node_prev(node_in_pos));
+  node_link_next(new_node, node_in_pos);
+  node_link_next(node_prev(node_in_pos), new_node);
+  node_link_prev(node_in_pos, new_node);
+  ++self->size;
+}
+
+node_t *
+doubly_linked_list_remove_last_node(doubly_linked_list_t *self)
+{
+  assert(doubly_linked_list_size(self) == 1);
+
+  node_t *old_node = self->head;
+
+  self->head = NULL;
+  self->tail = NULL;
+  self->size = 0;
+
+  return old_node;
 }
 
 node_t *
 doubly_linked_list_remove_head_node(doubly_linked_list_t *self)
 {
-  assert(!doubly_linked_list_is_empty(self));
+  assert(doubly_linked_list_size(self) > 1);
 
-  node_t *head = self->head;
-  node_unlink_prev(node_next(self->head));
+  node_t *old_head = self->head;
+  self->head = node_next(old_head);
+  node_unlink_prev(self->head);
   --self->size;
 
-  return head;
+  return old_head;
 }
 
 node_t *
 doubly_linked_list_remove_tail_node(doubly_linked_list_t *self)
 {
-  assert(!doubly_linked_list_is_empty(self));
+  assert(doubly_linked_list_size(self) > 1);
 
-  node_t *tail = self->tail;
-  node_unlink_next(node_prev(self->tail));
+  node_t *old_tail = self->tail;
+  self->tail = node_prev(old_tail);
+  node_unlink_next(self->tail);
   --self->size;
 
-  return tail;
+  return old_tail;
 }
 
 node_t *
-doubly_linked_list_remove_node(doubly_linked_list_t *self, size_t pos)
+doubly_linked_list_remove_middle_node(doubly_linked_list_t *self, size_t pos)
 {
-  assert(pos < doubly_linked_list_size(self));
+  assert(pos > 0 && pos < doubly_linked_list_size(self) - 1);
 
-  node_t *current = doubly_linked_list_get_node(self, pos);
-  node_link_next(node_prev(current), node_next(current));
-  node_link_prev(node_next(current), node_prev(current));
+  node_t *old_node = doubly_linked_list_get_node(self, pos);
+  node_link_next(node_prev(old_node), node_next(old_node));
+  node_link_prev(node_next(old_node), node_prev(old_node));
   --self->size;
 
-  return current;
+  return old_node;
 }
 
 bool
@@ -283,7 +301,7 @@ doubly_linked_list_insert(doubly_linked_list_t *self, size_t pos, pthread_t tid)
   else if (pos == doubly_linked_list_size(self))
     doubly_linked_list_insert_node_in_tail(self, new_node);
   else
-    doubly_linked_list_insert_node(self, pos, new_node);
+    doubly_linked_list_insert_middle_node(self, pos, new_node);
 
   ok = true;
 
@@ -320,7 +338,10 @@ doubly_linked_list_insert_tail(doubly_linked_list_t *self, pthread_t tid)
   TRY(new_node = node_new(), "couldn't create a new node");
   node_set(new_node, tid);
 
-  doubly_linked_list_insert_node_in_tail(self, new_node);
+  if (doubly_linked_list_is_empty(self))
+    doubly_linked_list_insert_node_when_empty(self, new_node);
+  else
+    doubly_linked_list_insert_node_in_tail(self, new_node);
 
   ok = true;
 
@@ -333,10 +354,20 @@ doubly_linked_list_remove(doubly_linked_list_t *self, size_t pos)
 {
   assert(pos < doubly_linked_list_size(self));
 
-  node_t *current = doubly_linked_list_remove_node(self, pos);
-  pthread_t tid = node_get(current);
-  if (current)
-    node_destroy(current);
+  node_t *old_node = NULL;
+
+  if (doubly_linked_list_is_empty(self))
+    old_node = doubly_linked_list_remove_last_node(self);
+  else if (pos == 0)
+    old_node = doubly_linked_list_remove_head_node(self);
+  else if (pos == doubly_linked_list_size(self))
+    old_node = doubly_linked_list_remove_tail_node(self);
+  else
+    old_node = doubly_linked_list_remove_middle_node(self, pos);
+
+  pthread_t tid = node_get(old_node);
+  if (old_node)
+    node_destroy(old_node);
 
   return tid;
 }
@@ -346,10 +377,16 @@ doubly_linked_list_remove_head(doubly_linked_list_t *self)
 {
   assert(!doubly_linked_list_is_empty(self));
 
-  node_t *head = doubly_linked_list_remove_head_node(self);
-  pthread_t tid = node_get(head);
-  if (head)
-    node_destroy(head);
+  node_t *old_head = NULL;
+
+  if (doubly_linked_list_size(self) == 1)
+    old_head = doubly_linked_list_remove_last_node(self);
+  else
+    old_head = doubly_linked_list_remove_head_node(self);
+
+  pthread_t tid = node_get(old_head);
+  if (old_head)
+    node_destroy(old_head);
 
   return tid;
 }
@@ -359,10 +396,16 @@ doubly_linked_list_remove_tail(doubly_linked_list_t *self)
 {
   assert(!doubly_linked_list_is_empty(self));
 
-  node_t *tail = doubly_linked_list_remove_tail_node(self);
-  pthread_t tid = node_get(tail);
-  if (tail)
-    node_destroy(tail);
+  node_t *old_tail = NULL;
+
+  if (doubly_linked_list_size(self) == 1)
+    old_tail = doubly_linked_list_remove_last_node(self);
+  else
+    old_tail = doubly_linked_list_remove_tail_node(self);
+
+  pthread_t tid = node_get(old_tail);
+  if (old_tail)
+    node_destroy(old_tail);
 
   return tid;
 }
