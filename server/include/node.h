@@ -4,7 +4,8 @@
 #include <bits/pthreadtypes.h>
 #include <stdbool.h>
 
-struct node {
+struct node
+{
   pthread_t tid;
   struct node *next;
   struct node *prev;

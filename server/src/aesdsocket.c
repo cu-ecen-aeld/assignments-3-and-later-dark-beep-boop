@@ -40,10 +40,14 @@ static void aesdsocket_terminate_handler(int signo);
 static void aesdsocket_timestamp_handler(int signo);
 static bool aesdsocket_daemonize(void);
 static bool aesdsocket_open_listening_socket(
-    int *sockfd, const char *port, int backlog);
+  int *sockfd,
+  const char *port,
+  int backlog);
 static const void *aesdsocket_get_in_addr(const struct sockaddr *sa);
 static bool aesdsocket_take_timestamp(
-    const char *timestamp_format, int file_fd, monitor_t *file_monitor);
+  const char *timestamp_format,
+  int file_fd,
+  monitor_t *file_monitor);
 
 struct aesdsocket_thread_arg
 {
@@ -57,19 +61,28 @@ typedef struct aesdsocket_thread_arg aesdsocket_thread_arg_t;
 
 static void *aesdsocket_start_thread(void *arg);
 static bool aesdsocket_serve(
-    int socket_fd,
-    int write_file_fd,
-    const char *filename,
-    monitor_t *file_monitor);
+  int socket_fd,
+  int write_file_fd,
+  const char *filename,
+  monitor_t *file_monitor);
 static bool aesdsocket_recv_and_write_line(
-    int file_fd, int socket_fd, monitor_t *file_monitor);
+  int file_fd,
+  int socket_fd,
+  monitor_t *file_monitor);
 static bool aesdsocket_recv_line(int socket_fd, char **line);
 static bool aesdsocket_write_line(
-    int file_fd, const char *line, monitor_t *file_monitor);
+  int file_fd,
+  const char *line,
+  monitor_t *file_monitor);
 static bool aesdsocket_read_and_send_file(
-    int socket_fd, int file_fd, monitor_t *file_monitor);
+  int socket_fd,
+  int file_fd,
+  monitor_t *file_monitor);
 static bool aesdsocket_read_line(
-    int file_fd, char **line, bool *eof, monitor_t *file_monitor);
+  int file_fd,
+  char **line,
+  bool *eof,
+  monitor_t *file_monitor);
 static bool aesdsocket_send_line(int socket_fd, const char *line);
 
 void
@@ -103,7 +116,8 @@ aesdsocket_daemonize(void)
 
   TRYC_ERRNO(chdir("/"));
 
-  for (int i = 0; i < 3; ++i) close(i);
+  for (int i = 0; i < 3; ++i)
+    close(i);
 
   TRYC_ERRNO(open("/dev/null", O_RDWR));
   TRYC_ERRNO(dup(0));
@@ -134,7 +148,7 @@ aesdsocket_open_listening_socket(int *sockfd, const char *port, int backlog)
 
   TRYC_ERRNO(sockfd_test = socket(servinfo->ai_family, SOCK_STREAM, 0));
   TRYC_ERRNO(
-      setsockopt(sockfd_test, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)));
+    setsockopt(sockfd_test, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)));
 
   TRYC_ERRNO(bind(sockfd_test, servinfo->ai_addr, servinfo->ai_addrlen));
   TRYC_ERRNO(listen(sockfd_test, backlog));
@@ -158,16 +172,18 @@ aesdsocket_get_in_addr(const struct sockaddr *sa)
   void *result = NULL;
 
   if (sa->sa_family == AF_INET)
-    result = &(((struct sockaddr_in *) sa)->sin_addr);
+    result = &(((struct sockaddr_in *)sa)->sin_addr);
   else if (sa->sa_family == AF_INET6)
-    result = &(((struct sockaddr_in6 *) sa)->sin6_addr);
+    result = &(((struct sockaddr_in6 *)sa)->sin6_addr);
 
   return result;
 }
 
 bool
 aesdsocket_take_timestamp(
-    const char *timestamp_format, int file_fd, monitor_t *file_monitor)
+  const char *timestamp_format,
+  int file_fd,
+  monitor_t *file_monitor)
 {
   bool ok = false;
   struct timespec timestamp;
@@ -176,17 +192,20 @@ aesdsocket_take_timestamp(
   size_t timestamp_size = 0;
 
   TRYC_ERRNO(clock_gettime(CLOCK_REALTIME, &timestamp));
-  TRY(localtime_r(&timestamp.tv_sec, &local_timestamp),
-      "localtime timestamp conversion failed");
-  TRY(timestamp_size = strftime(
-          timestamp_buffer, BUFFSIZE, timestamp_format, &local_timestamp),
-      "timestamp string creation failed");
+  TRY(
+    localtime_r(&timestamp.tv_sec, &local_timestamp),
+    "localtime timestamp conversion failed");
+  TRY(
+    timestamp_size =
+      strftime(timestamp_buffer, BUFFSIZE, timestamp_format, &local_timestamp),
+    "timestamp string creation failed");
   timestamp_buffer[timestamp_size] = '\n';
   timestamp_buffer[timestamp_size + 1] = '\0';
 
   syslog(LOG_DEBUG, "%s", timestamp_buffer);
-  TRY(aesdsocket_write_line(file_fd, timestamp_buffer, file_monitor),
-      "couldn't write the timestamp to the file");
+  TRY(
+    aesdsocket_write_line(file_fd, timestamp_buffer, file_monitor),
+    "couldn't write the timestamp to the file");
 
   timestamp_flag = 0;
 
@@ -209,8 +228,9 @@ aesdsocket_start_thread(void *arg)
 
   syslog(LOG_DEBUG, "Accepted connection from %s\n", remote_name);
 
-  TRY(aesdsocket_serve(conn_sockfd, write_file_fd, filename, file_monitor),
-      "thread execution failed");
+  TRY(
+    aesdsocket_serve(conn_sockfd, write_file_fd, filename, file_monitor),
+    "thread execution failed");
 
 done:
   if (conn_sockfd != -1)
@@ -229,22 +249,24 @@ done:
 
 bool
 aesdsocket_serve(
-    int socket_fd,
-    int write_file_fd,
-    const char *filename,
-    monitor_t *file_monitor)
+  int socket_fd,
+  int write_file_fd,
+  const char *filename,
+  monitor_t *file_monitor)
 {
   bool ok = false;
   int read_file_fd = -1;
 
-  TRY(aesdsocket_recv_and_write_line(write_file_fd, socket_fd, file_monitor),
-      "line reception or writing failed");
+  TRY(
+    aesdsocket_recv_and_write_line(write_file_fd, socket_fd, file_monitor),
+    "line reception or writing failed");
 
   TRYC_ERRNO(
-      read_file_fd =
-          open(filename, O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
-  TRY(aesdsocket_read_and_send_file(socket_fd, read_file_fd, file_monitor),
-      "line reading or sending failed");
+    read_file_fd =
+      open(filename, O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+  TRY(
+    aesdsocket_read_and_send_file(socket_fd, read_file_fd, file_monitor),
+    "line reading or sending failed");
 
   ok = true;
 
@@ -257,15 +279,18 @@ done:
 
 bool
 aesdsocket_recv_and_write_line(
-    int file_fd, int socket_fd, monitor_t *file_monitor)
+  int file_fd,
+  int socket_fd,
+  monitor_t *file_monitor)
 {
   bool ok = false;
   char *line = NULL;
 
   TRY(aesdsocket_recv_line(socket_fd, &line), "line reception failed");
   if (line) {
-    TRY(aesdsocket_write_line(file_fd, line, file_monitor),
-        "line writing failed");
+    TRY(
+      aesdsocket_write_line(file_fd, line, file_monitor),
+      "line writing failed");
   }
 
   ok = true;
@@ -304,9 +329,10 @@ aesdsocket_recv_line(int socket_fd, char **line)
       }
 
       if (useful_bytes > 0) {
-        TRY(line_buffer = (char *) realloc(
-                line_buffer, line_buffer_size + useful_bytes + 1),
-            "memory allocation failed");
+        TRY(
+          line_buffer =
+            (char *)realloc(line_buffer, line_buffer_size + useful_bytes + 1),
+          "memory allocation failed");
         strncpy(line_buffer + line_buffer_size, buffer, useful_bytes);
         line_buffer_size += useful_bytes;
       }
@@ -336,8 +362,8 @@ aesdsocket_write_line(int file_fd, const char *line, monitor_t *file_monitor)
   while (bytes_to_write > 0) {
     ssize_t bytes_written;
     TRYC_RETRY_ON_EINTR(
-        bytes_written = write(
-            file_fd, line + strlen(line) - bytes_to_write, bytes_to_write));
+      bytes_written =
+        write(file_fd, line + strlen(line) - bytes_to_write, bytes_to_write));
     bytes_to_write -= bytes_written;
   }
   monitor_stop_writing(file_monitor);
@@ -350,15 +376,18 @@ done:
 
 bool
 aesdsocket_read_and_send_file(
-    int socket_fd, int file_fd, monitor_t *file_monitor)
+  int socket_fd,
+  int file_fd,
+  monitor_t *file_monitor)
 {
   bool ok = false;
   bool eof = false;
   char *line = NULL;
 
   while (!eof) {
-    TRY(aesdsocket_read_line(file_fd, &line, &eof, file_monitor),
-        "line reading failed");
+    TRY(
+      aesdsocket_read_line(file_fd, &line, &eof, file_monitor),
+      "line reading failed");
     if (line && strlen(line)) {
       TRY(aesdsocket_send_line(socket_fd, line), "line sending failed");
     }
@@ -375,7 +404,10 @@ done:
 
 bool
 aesdsocket_read_line(
-    int file_fd, char **line, bool *eof, monitor_t *file_monitor)
+  int file_fd,
+  char **line,
+  bool *eof,
+  monitor_t *file_monitor)
 {
   bool ok = false;
   bool eol = false;
@@ -409,8 +441,8 @@ aesdsocket_read_line(
 
       if (useful_bytes > 0) {
         TRY_ERRNO(
-            line_buffer = (char *) realloc(
-                line_buffer, line_buffer_size + useful_bytes + 1));
+          line_buffer =
+            (char *)realloc(line_buffer, line_buffer_size + useful_bytes + 1));
         strncpy(line_buffer + line_buffer_size, buffer, useful_bytes);
         line_buffer_size += useful_bytes;
       }
@@ -443,8 +475,8 @@ aesdsocket_send_line(int socket_fd, const char *line)
   while (bytes_to_send > 0 && !termination_flag) {
     ssize_t bytes_sent;
     TRYC_RETRY_ON_EINTR(
-        bytes_sent = send(
-            socket_fd, line + strlen(line) - bytes_to_send, bytes_to_send, 0));
+      bytes_sent =
+        send(socket_fd, line + strlen(line) - bytes_to_send, bytes_to_send, 0));
     bytes_to_send -= bytes_sent;
   }
 
@@ -456,12 +488,12 @@ done:
 
 bool
 aesdsocket_mainloop(
-    const char *port,
-    int backlog,
-    const char *filename,
-    bool daemon,
-    time_t timestamp_frequency_seconds,
-    const char *timestamp_format)
+  const char *port,
+  int backlog,
+  const char *filename,
+  bool daemon,
+  time_t timestamp_frequency_seconds,
+  const char *timestamp_format)
 {
   bool ok = false;
   struct sigaction action;
@@ -497,13 +529,14 @@ aesdsocket_mainloop(
   TRYC_ERRNO(timer_create(CLOCK_MONOTONIC, NULL, &timestamp_timer));
 
   TRYC_ERRNO(
-      write_file_fd = open(
-          filename,
-          O_WRONLY | O_APPEND | O_CREAT,
-          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+    write_file_fd = open(
+      filename,
+      O_WRONLY | O_APPEND | O_CREAT,
+      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
 
-  TRY(aesdsocket_open_listening_socket(&sockfd, port, backlog),
-      "Couldn't open server socket");
+  TRY(
+    aesdsocket_open_listening_socket(&sockfd, port, backlog),
+    "Couldn't open server socket");
 
   TRY(thread_queue = queue_new(), "queue creation failed");
   TRY(write_file_monitor = monitor_new(), "monitor creation failed");
@@ -515,19 +548,25 @@ aesdsocket_mainloop(
 
   while (!termination_flag) {
     if (timestamp_flag) {
-      TRY(aesdsocket_take_timestamp(
-              timestamp_format, write_file_fd, write_file_monitor),
-          "couldn't take timestamp");
+      TRY(
+        aesdsocket_take_timestamp(
+          timestamp_format,
+          write_file_fd,
+          write_file_monitor),
+        "couldn't take timestamp");
     }
 
     TRYC_CONTINUE_ON_EINTR(
-        conn_sockfd =
-            accept(sockfd, (struct sockaddr *) &remote_addr, &addr_size));
+      conn_sockfd =
+        accept(sockfd, (struct sockaddr *)&remote_addr, &addr_size));
 
     const char *in_addr =
-        aesdsocket_get_in_addr((struct sockaddr *) &remote_addr);
+      aesdsocket_get_in_addr((struct sockaddr *)&remote_addr);
     TRY_ERRNO(inet_ntop(
-        remote_addr.ss_family, in_addr, remote_name, sizeof remote_name));
+      remote_addr.ss_family,
+      in_addr,
+      remote_name,
+      sizeof remote_name));
 
     TRY_ALLOCATE(thread_arg, aesdsocket_thread_arg_t);
     thread_arg->conn_sockfd = conn_sockfd;

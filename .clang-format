@@ -1,12 +1,8 @@
 ---
-BasedOnStyle: Google
+BasedOnStyle: Mozilla
 AlignAfterOpenBracket: AlwaysBreak
-AllowShortIfStatementsOnASingleLine: Never
+AllowAllArgumentsOnNextLine: false
 AlwaysBreakAfterDefinitionReturnType: All
-BinPackArguments: 'false'
-BinPackParameters: 'false'
-BreakBeforeBraces: Mozilla
+AlwaysBreakAfterReturnType: AllDefinitions
+PenaltyReturnTypeOnItsOwnLine: 2000
 PointerAlignment: Right
-SpaceAfterCStyleCast: 'true'
-
-...

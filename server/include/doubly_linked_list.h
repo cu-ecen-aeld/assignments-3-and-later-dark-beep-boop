@@ -25,18 +25,24 @@ size_t doubly_linked_list_size(const doubly_linked_list_t *self);
 bool doubly_linked_list_is_empty(const doubly_linked_list_t *self);
 
 void doubly_linked_list_set(
-    const doubly_linked_list_t *self, size_t pos, pthread_t tid);
+  const doubly_linked_list_t *self,
+  size_t pos,
+  pthread_t tid);
 void doubly_linked_list_set_head(
-    const doubly_linked_list_t *self, pthread_t tid);
+  const doubly_linked_list_t *self,
+  pthread_t tid);
 void doubly_linked_list_set_tail(
-    const doubly_linked_list_t *self, pthread_t tid);
+  const doubly_linked_list_t *self,
+  pthread_t tid);
 
 pthread_t doubly_linked_list_get(const doubly_linked_list_t *self, size_t pos);
 pthread_t doubly_linked_list_get_head(const doubly_linked_list_t *self);
 pthread_t doubly_linked_list_get_tail(const doubly_linked_list_t *self);
 
 bool doubly_linked_list_insert(
-    doubly_linked_list_t *self, size_t pos, pthread_t tid);
+  doubly_linked_list_t *self,
+  size_t pos,
+  pthread_t tid);
 bool doubly_linked_list_insert_head(doubly_linked_list_t *self, pthread_t tid);
 bool doubly_linked_list_insert_tail(doubly_linked_list_t *self, pthread_t tid);
 

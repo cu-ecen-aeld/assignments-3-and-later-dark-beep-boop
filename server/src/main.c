@@ -32,9 +32,15 @@ main(int argc, char *argv[])
     }
   }
 
-  TRY(aesdsocket_mainloop(
-          PORT, BACKLOG, FILENAME, daemon, STAMPFREQSEC, STAMPFORMAT),
-      "execution failed");
+  TRY(
+    aesdsocket_mainloop(
+      PORT,
+      BACKLOG,
+      FILENAME,
+      daemon,
+      STAMPFREQSEC,
+      STAMPFORMAT),
+    "execution failed");
 
   exit_status = EXIT_SUCCESS;
 

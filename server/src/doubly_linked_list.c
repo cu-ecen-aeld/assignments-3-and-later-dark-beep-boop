@@ -12,24 +12,33 @@
 
 static void doubly_linked_list_clear(doubly_linked_list_t *self);
 static node_t *doubly_linked_list_get_node_from_head(
-    const doubly_linked_list_t *self, size_t pos);
+  const doubly_linked_list_t *self,
+  size_t pos);
 static node_t *doubly_linked_list_get_node_from_tail(
-    const doubly_linked_list_t *self, size_t pos);
+  const doubly_linked_list_t *self,
+  size_t pos);
 static node_t *doubly_linked_list_get_node(
-    const doubly_linked_list_t *self, size_t pos);
+  const doubly_linked_list_t *self,
+  size_t pos);
 static void doubly_linked_list_insert_node_when_empty(
-    doubly_linked_list_t *self, node_t *new_node);
+  doubly_linked_list_t *self,
+  node_t *new_node);
 static void doubly_linked_list_insert_node_in_head(
-    doubly_linked_list_t *self, node_t *new_node);
+  doubly_linked_list_t *self,
+  node_t *new_node);
 static void doubly_linked_list_insert_node_in_tail(
-    doubly_linked_list_t *self, node_t *new_node);
+  doubly_linked_list_t *self,
+  node_t *new_node);
 static void doubly_linked_list_insert_middle_node(
-    doubly_linked_list_t *self, size_t pos, node_t *new_node);
+  doubly_linked_list_t *self,
+  size_t pos,
+  node_t *new_node);
 static node_t *doubly_linked_list_remove_last_node(doubly_linked_list_t *self);
 static node_t *doubly_linked_list_remove_head_node(doubly_linked_list_t *self);
 static node_t *doubly_linked_list_remove_tail_node(doubly_linked_list_t *self);
 static node_t *doubly_linked_list_remove_middle_node(
-    doubly_linked_list_t *self, size_t pos);
+  doubly_linked_list_t *self,
+  size_t pos);
 
 void
 doubly_linked_list_clear(doubly_linked_list_t *self)
@@ -39,19 +48,22 @@ doubly_linked_list_clear(doubly_linked_list_t *self)
 
 node_t *
 doubly_linked_list_get_node_from_head(
-    const doubly_linked_list_t *self, size_t pos)
+  const doubly_linked_list_t *self,
+  size_t pos)
 {
   assert(pos < doubly_linked_list_size(self));
 
   node_t *current = self->head;
-  for (size_t i = 0; i < pos; ++i) current = node_next(current);
+  for (size_t i = 0; i < pos; ++i)
+    current = node_next(current);
 
   return current;
 }
 
 node_t *
 doubly_linked_list_get_node_from_tail(
-    const doubly_linked_list_t *self, size_t pos)
+  const doubly_linked_list_t *self,
+  size_t pos)
 {
   assert(pos < doubly_linked_list_size(self));
 
@@ -82,7 +94,8 @@ doubly_linked_list_get_node(const doubly_linked_list_t *self, size_t pos)
 
 void
 doubly_linked_list_insert_node_when_empty(
-    doubly_linked_list_t *self, node_t *new_node)
+  doubly_linked_list_t *self,
+  node_t *new_node)
 {
   assert(doubly_linked_list_is_empty(self));
 
@@ -93,7 +106,8 @@ doubly_linked_list_insert_node_when_empty(
 
 void
 doubly_linked_list_insert_node_in_head(
-    doubly_linked_list_t *self, node_t *new_node)
+  doubly_linked_list_t *self,
+  node_t *new_node)
 {
   assert(!doubly_linked_list_is_empty(self));
 
@@ -105,7 +119,8 @@ doubly_linked_list_insert_node_in_head(
 
 void
 doubly_linked_list_insert_node_in_tail(
-    doubly_linked_list_t *self, node_t *new_node)
+  doubly_linked_list_t *self,
+  node_t *new_node)
 {
   assert(!doubly_linked_list_is_empty(self));
 
@@ -117,7 +132,9 @@ doubly_linked_list_insert_node_in_tail(
 
 void
 doubly_linked_list_insert_middle_node(
-    doubly_linked_list_t *self, size_t pos, node_t *new_node)
+  doubly_linked_list_t *self,
+  size_t pos,
+  node_t *new_node)
 {
   assert(pos > 0 && pos < doubly_linked_list_size(self));
 
@@ -203,8 +220,9 @@ doubly_linked_list_new(void)
   doubly_linked_list_t *object = NULL;
 
   TRY_ALLOCATE(new_object, doubly_linked_list_t);
-  TRY(doubly_linked_list_initialize(new_object),
-      "doubly linked list initialization failed");
+  TRY(
+    doubly_linked_list_initialize(new_object),
+    "doubly linked list initialization failed");
 
   object = new_object;
 
@@ -236,7 +254,9 @@ doubly_linked_list_is_empty(const doubly_linked_list_t *self)
 
 void
 doubly_linked_list_set(
-    const doubly_linked_list_t *self, size_t pos, pthread_t tid)
+  const doubly_linked_list_t *self,
+  size_t pos,
+  pthread_t tid)
 {
   assert(pos < doubly_linked_list_size(self));
 

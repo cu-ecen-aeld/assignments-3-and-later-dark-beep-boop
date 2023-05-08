@@ -88,8 +88,9 @@ void
 monitor_start_writing(monitor_t *self)
 {
   pthread_mutex_lock(&self->condition_lock);
-  if (self->active_writers || self->active_readers || self->waiting_readers ||
-      self->waiting_writers) {
+  if (
+    self->active_writers || self->active_readers || self->waiting_readers ||
+    self->waiting_writers) {
     ++self->waiting_writers;
     pthread_cond_wait(&self->can_write, &self->condition_lock);
     --self->waiting_writers;
