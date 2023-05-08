@@ -5,6 +5,9 @@
 #include <asm-generic/errno.h>
 #include <asm-generic/socket.h>
 #include <bits/pthreadtypes.h>
+#include <bits/time.h>
+#include <bits/types/struct_itimerspec.h>
+#include <bits/types/timer_t.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -21,6 +24,7 @@
 #include <sys/syslog.h>
 #include <sys/types.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "monitor.h"
@@ -29,13 +33,17 @@
 
 #define BUFFSIZE 1024
 
-static volatile sig_atomic_t terminate = 0;
+static volatile sig_atomic_t termination_flag = 0;
+static volatile sig_atomic_t timestamp_flag = 0;
 
 static void aesdsocket_terminate_handler(int signo);
+static void aesdsocket_timestamp_handler(int signo);
 static bool aesdsocket_daemonize(void);
 static bool aesdsocket_open_listening_socket(
     int *sockfd, const char *port, int backlog);
 static const void *aesdsocket_get_in_addr(const struct sockaddr *sa);
+static bool aesdsocket_take_timestamp(
+    const char *timestamp_format, int file_fd, monitor_t *file_monitor);
 
 struct aesdsocket_thread_arg
 {
@@ -69,8 +77,15 @@ aesdsocket_terminate_handler(int signo)
 {
   if (signo == SIGTERM || signo == SIGINT) {
     syslog(LOG_DEBUG, "Caught signal, exiting\n");
-    terminate = 1;
+    termination_flag = 1;
   }
+}
+
+void
+aesdsocket_timestamp_handler(int signo)
+{
+  if (signo == SIGALRM)
+    timestamp_flag = 1;
 }
 
 bool
@@ -148,6 +163,37 @@ aesdsocket_get_in_addr(const struct sockaddr *sa)
     result = &(((struct sockaddr_in6 *) sa)->sin6_addr);
 
   return result;
+}
+
+bool
+aesdsocket_take_timestamp(
+    const char *timestamp_format, int file_fd, monitor_t *file_monitor)
+{
+  bool ok = false;
+  struct timespec timestamp;
+  struct tm local_timestamp;
+  char timestamp_buffer[BUFFSIZE] = "";
+  size_t timestamp_size = 0;
+
+  TRYC_ERRNO(clock_gettime(CLOCK_REALTIME, &timestamp));
+  TRY(localtime_r(&timestamp.tv_sec, &local_timestamp),
+      "localtime timestamp conversion failed");
+  TRY(timestamp_size = strftime(
+          timestamp_buffer, BUFFSIZE, timestamp_format, &local_timestamp),
+      "timestamp string creation failed");
+  timestamp_buffer[timestamp_size] = '\n';
+  timestamp_buffer[timestamp_size + 1] = '\0';
+
+  syslog(LOG_DEBUG, "%s", timestamp_buffer);
+  TRY(aesdsocket_write_line(file_fd, timestamp_buffer, file_monitor),
+      "couldn't write the timestamp to the file");
+
+  timestamp_flag = 0;
+
+  ok = true;
+
+done:
+  return ok;
 }
 
 void *
@@ -244,7 +290,7 @@ aesdsocket_recv_line(int socket_fd, char **line)
   if (*line)
     line_buffer = *line;
 
-  while (!eol && !terminate) {
+  while (!eol && !termination_flag) {
     TRYC_CONTINUE_ON_EINTR(bytes_read = recv(socket_fd, buffer, BUFFSIZE, 0));
     if (bytes_read) {
       ssize_t useful_bytes;
@@ -394,7 +440,7 @@ aesdsocket_send_line(int socket_fd, const char *line)
   bool ok = false;
   size_t bytes_to_send = strlen(line);
 
-  while (bytes_to_send > 0 && !terminate) {
+  while (bytes_to_send > 0 && !termination_flag) {
     ssize_t bytes_sent;
     TRYC_RETRY_ON_EINTR(
         bytes_sent = send(
@@ -410,7 +456,12 @@ done:
 
 bool
 aesdsocket_mainloop(
-    const char *port, int backlog, const char *filename, bool daemon)
+    const char *port,
+    int backlog,
+    const char *filename,
+    bool daemon,
+    time_t timestamp_frequency_seconds,
+    const char *timestamp_format)
 {
   bool ok = false;
   struct sigaction action;
@@ -421,19 +472,29 @@ aesdsocket_mainloop(
   struct sockaddr_storage remote_addr;
   socklen_t addr_size = sizeof(struct sockaddr_storage);
   queue_t *thread_queue = NULL;
-  monitor_t *file_monitor = NULL;
+  monitor_t *write_file_monitor = NULL;
   aesdsocket_thread_arg_t *thread_arg = NULL;
+  timer_t timestamp_timer = NULL;
+  struct itimerspec timestamp_frequency;
 
   if (daemon)
     TRY(aesdsocket_daemonize(), "daemonization failed");
 
-  memset(&action, 0, sizeof action);
+  memset(&action, 0, sizeof(action));
   action.sa_handler = aesdsocket_terminate_handler;
   sigemptyset(&action.sa_mask);
   TRYC_ERRNO(sigaddset(&action.sa_mask, SIGTERM));
   TRYC_ERRNO(sigaddset(&action.sa_mask, SIGINT));
   TRYC_ERRNO(sigaction(SIGTERM, &action, NULL));
   TRYC_ERRNO(sigaction(SIGINT, &action, NULL));
+
+  memset(&action, 0, sizeof(action));
+  action.sa_handler = aesdsocket_timestamp_handler;
+  sigemptyset(&action.sa_mask);
+  TRYC_ERRNO(sigaddset(&action.sa_mask, SIGALRM));
+  TRYC_ERRNO(sigaction(SIGALRM, &action, NULL));
+
+  TRYC_ERRNO(timer_create(CLOCK_MONOTONIC, NULL, &timestamp_timer));
 
   TRYC_ERRNO(
       write_file_fd = open(
@@ -445,9 +506,20 @@ aesdsocket_mainloop(
       "Couldn't open server socket");
 
   TRY(thread_queue = queue_new(), "queue creation failed");
-  TRY(file_monitor = monitor_new(), "monitor creation failed");
+  TRY(write_file_monitor = monitor_new(), "monitor creation failed");
 
-  while (!terminate) {
+  memset(&timestamp_frequency, 0, sizeof(timestamp_frequency));
+  timestamp_frequency.it_value.tv_sec = timestamp_frequency_seconds;
+  timestamp_frequency.it_interval.tv_sec = timestamp_frequency_seconds;
+  TRYC_ERRNO(timer_settime(timestamp_timer, 0, &timestamp_frequency, NULL));
+
+  while (!termination_flag) {
+    if (timestamp_flag) {
+      TRY(aesdsocket_take_timestamp(
+              timestamp_format, write_file_fd, write_file_monitor),
+          "couldn't take timestamp");
+    }
+
     TRYC_CONTINUE_ON_EINTR(
         conn_sockfd =
             accept(sockfd, (struct sockaddr *) &remote_addr, &addr_size));
@@ -462,19 +534,21 @@ aesdsocket_mainloop(
     thread_arg->write_file_fd = write_file_fd;
     TRY_ERRNO(thread_arg->filename = strdup(filename));
     TRY_ERRNO(thread_arg->remote_name = strndup(remote_name, INET6_ADDRSTRLEN));
-    thread_arg->file_monitor = file_monitor;
+    thread_arg->file_monitor = write_file_monitor;
 
     pthread_t tid;
     int status;
     TRY_PTHREAD_CREATE(&tid, NULL, aesdsocket_start_thread, thread_arg, status);
     TRY(queue_enqueue(thread_queue, tid), "tid enqueue failed");
-    conn_sockfd = -1;
     thread_arg = NULL;
   }
 
   ok = true;
 
 done:
+  if (timestamp_timer)
+    timer_delete(timestamp_timer);
+
   if (thread_queue) {
     while (!queue_is_empty(thread_queue)) {
       pthread_t tid = queue_dequeue(thread_queue);
@@ -484,8 +558,8 @@ done:
     queue_destroy(thread_queue);
   }
 
-  if (file_monitor)
-    monitor_destroy(file_monitor);
+  if (write_file_monitor)
+    monitor_destroy(write_file_monitor);
 
   if (thread_arg) {
     if (thread_arg->filename)

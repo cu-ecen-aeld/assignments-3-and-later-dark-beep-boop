@@ -10,7 +10,7 @@ OBJ_FILES := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(FILES)))
 
 CC := $(CROSS_COMPILE)gcc
 CFLAGS := -g -Wall -Werror -O0 -I$(INCLUDE_DIR)
-LDFLAGS := -pthread
+LDFLAGS := -pthread -lrt
 
 .PHONY: all install clean
 
@@ -18,7 +18,7 @@ all: $(BUILD_DIR)/$(TARGET_EXEC)
 
 $(BUILD_DIR)/$(TARGET_EXEC): $(OBJ_FILES)
 	mkdir -p $(dir $@)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $^ $(LDFLAGS) -o $@
 
 $(OBJ_FILES): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	mkdir -p $(dir $@)

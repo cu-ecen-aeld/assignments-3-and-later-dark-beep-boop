@@ -12,6 +12,8 @@
 #define PORT "9000"
 #define BACKLOG 20
 #define FILENAME "/var/tmp/aesdsocketdata"
+#define STAMPFREQSEC 10
+#define STAMPFORMAT "timestamp:%a, %d %b %Y %T %z"
 
 int
 main(int argc, char *argv[])
@@ -30,7 +32,9 @@ main(int argc, char *argv[])
     }
   }
 
-  TRY(aesdsocket_mainloop(PORT, BACKLOG, FILENAME, daemon), "execution failed");
+  TRY(aesdsocket_mainloop(
+          PORT, BACKLOG, FILENAME, daemon, STAMPFREQSEC, STAMPFORMAT),
+      "execution failed");
 
   exit_status = EXIT_SUCCESS;
 
