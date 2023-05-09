@@ -9,7 +9,7 @@ FILES := main aesdsocket node doubly_linked_list queue monitor
 OBJ_FILES := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(FILES)))
 
 CC ?= $(CROSS_COMPILE)gcc
-CFLAGS ?= -g -Wall -Werror -O2 -I$(INCLUDE_DIR)
+CFLAGS ?= -g -Wall -Werror -O2
 LDFLAGS ?= -pthread -lrt
 
 .PHONY: all install clean
@@ -22,7 +22,7 @@ $(BUILD_DIR)/$(TARGET_EXEC): $(OBJ_FILES)
 
 $(OBJ_FILES): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(INCLUDE_DIR) -c $< -o $@
 
 install:
 	mkdir -p $(DST_DIR)
