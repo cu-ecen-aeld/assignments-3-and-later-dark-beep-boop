@@ -207,8 +207,6 @@ aesdsocket_take_timestamp(
     aesdsocket_write_line(file_fd, timestamp_buffer, file_monitor),
     "couldn't write the timestamp to the file");
 
-  timestamp_flag = 0;
-
   ok = true;
 
 done:
@@ -554,6 +552,8 @@ aesdsocket_mainloop(
           write_file_fd,
           write_file_monitor),
         "couldn't take timestamp");
+
+      timestamp_flag = 0;
     }
 
     TRYC_CONTINUE_ON_EINTR(

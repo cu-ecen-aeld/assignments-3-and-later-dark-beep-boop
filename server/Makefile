@@ -1,6 +1,6 @@
 TARGET_EXEC := aesdsocket
 
-BUILD_DIR := .
+BUILD_DIR := build
 DST_DIR := .
 INCLUDE_DIR := include
 SRC_DIR := src
