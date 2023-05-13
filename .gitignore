@@ -11,3 +11,4 @@ server/aesdsocket
 server/valgrind-out.txt
 compile_commands.json
 .cache/
+launch.json
