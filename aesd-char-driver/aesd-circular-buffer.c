@@ -8,12 +8,12 @@
  *
  */
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
 #ifdef __KERNEL__
 #include <linux/string.h>
+#include <linux/types.h>
 #else
+#include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 #endif
 
