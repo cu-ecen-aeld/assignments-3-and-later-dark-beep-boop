@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h> // size_t
 #include <stdint.h> // uintx_t
+#include <sys/types.h>
 #endif
 
 #define AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED 10
