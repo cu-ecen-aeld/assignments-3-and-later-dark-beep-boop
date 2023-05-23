@@ -70,10 +70,16 @@ aesd_open(struct inode *inode, struct file *filp)
 int
 aesd_release(struct inode *inode, struct file *filp)
 {
+  struct aesd_dev *dev = filp->private_data;
+
   PDEBUG("release");
-  /**
-   * TODO: handle release
-   */
+
+  if (dev->unterminated)
+    kfree(dev->unterminated);
+
+  dev->unterminated = NULL;
+  dev->unterminated_size = 0;
+
   return 0;
 }
 
@@ -108,9 +114,6 @@ aesd_write(
   struct aesd_buffer_entry entry;
 
   PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
-  /**
-   * TODO: handle write
-   */
 
   if (mutex_lock_interruptible(&dev->lock))
     return -ERESTARTSYS;
@@ -199,9 +202,6 @@ aesd_init_module(void)
 
   memset(&aesd_device, 0, sizeof(struct aesd_dev));
 
-  /**
-   * TODO: initialize the AESD specific portion of the device
-   */
   mutex_init(&aesd_device.lock);
   aesd_circular_buffer_init(&aesd_device.buffer);
 
@@ -232,9 +232,6 @@ aesd_cleanup_module(void)
 
   cdev_del(&aesd_device.cdev);
 
-  /**
-   * TODO: cleanup AESD specific poritions here as necessary
-   */
   AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index)
   {
     if (entryptr->buffptr)
