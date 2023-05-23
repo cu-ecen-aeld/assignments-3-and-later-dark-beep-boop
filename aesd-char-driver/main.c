@@ -67,15 +67,7 @@ aesd_open(struct inode *inode, struct file *filp)
 int
 aesd_release(struct inode *inode, struct file *filp)
 {
-  struct aesd_dev *dev = filp->private_data;
-
   PDEBUG("release");
-
-  if (dev->unterminated)
-    kfree(dev->unterminated);
-
-  dev->unterminated = NULL;
-  dev->unterminated_size = 0;
 
   return 0;
 }
@@ -263,6 +255,11 @@ aesd_cleanup_module(void)
   uint8_t index = 0;
 
   cdev_del(&aesd_device.cdev);
+
+  if (aesd_device.unterminated)
+    kfree(aesd_device.unterminated);
+  aesd_device.unterminated = NULL;
+  aesd_device.unterminated_size = 0;
 
   AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index)
   {
