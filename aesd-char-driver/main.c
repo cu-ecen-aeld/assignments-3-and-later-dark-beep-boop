@@ -162,7 +162,7 @@ aesd_write(
   ssize_t terminator_position = 0;
   size_t final_count = 0;
   char *buffptr = NULL;
-  char *oldptr = NULL;
+  const char *oldptr = NULL;
   struct aesd_dev_operation *op = filp->private_data;
   struct aesd_dev *dev = op->dev;
   struct aesd_buffer_entry entry;
