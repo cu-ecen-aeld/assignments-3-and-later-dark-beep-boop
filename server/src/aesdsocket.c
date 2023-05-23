@@ -490,6 +490,7 @@ aesdsocket_mainloop(
   int backlog,
   const char *filename,
   bool daemon,
+  bool use_timestamp,
   time_t timestamp_frequency_seconds,
   const char *timestamp_format)
 {
@@ -518,14 +519,6 @@ aesdsocket_mainloop(
   TRYC_ERRNO(sigaction(SIGTERM, &action, NULL));
   TRYC_ERRNO(sigaction(SIGINT, &action, NULL));
 
-  memset(&action, 0, sizeof(action));
-  action.sa_handler = aesdsocket_timestamp_handler;
-  sigemptyset(&action.sa_mask);
-  TRYC_ERRNO(sigaddset(&action.sa_mask, SIGALRM));
-  TRYC_ERRNO(sigaction(SIGALRM, &action, NULL));
-
-  TRYC_ERRNO(timer_create(CLOCK_MONOTONIC, NULL, &timestamp_timer));
-
   TRYC_ERRNO(
     write_file_fd = open(
       filename,
@@ -539,10 +532,20 @@ aesdsocket_mainloop(
   TRY(thread_queue = queue_new(), "queue creation failed");
   TRY(write_file_monitor = monitor_new(), "monitor creation failed");
 
-  memset(&timestamp_frequency, 0, sizeof(timestamp_frequency));
-  timestamp_frequency.it_value.tv_sec = timestamp_frequency_seconds;
-  timestamp_frequency.it_interval.tv_sec = timestamp_frequency_seconds;
-  TRYC_ERRNO(timer_settime(timestamp_timer, 0, &timestamp_frequency, NULL));
+  if (use_timestamp) {
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = aesdsocket_timestamp_handler;
+    sigemptyset(&action.sa_mask);
+    TRYC_ERRNO(sigaddset(&action.sa_mask, SIGALRM));
+    TRYC_ERRNO(sigaction(SIGALRM, &action, NULL));
+
+    TRYC_ERRNO(timer_create(CLOCK_MONOTONIC, NULL, &timestamp_timer));
+
+    memset(&timestamp_frequency, 0, sizeof(timestamp_frequency));
+    timestamp_frequency.it_value.tv_sec = timestamp_frequency_seconds;
+    timestamp_frequency.it_interval.tv_sec = timestamp_frequency_seconds;
+    TRYC_ERRNO(timer_settime(timestamp_timer, 0, &timestamp_frequency, NULL));
+  }
 
   while (!termination_flag) {
     if (timestamp_flag) {

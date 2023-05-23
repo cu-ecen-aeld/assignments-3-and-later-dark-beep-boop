@@ -11,7 +11,13 @@
 
 #define PORT "9000"
 #define BACKLOG 20
+#ifdef USE_AESD_CHAR_DEVICE
+#define FILENAME "/dev/aesdchar"
+#define USESTAMP false
+#else
 #define FILENAME "/var/tmp/aesdsocketdata"
+#define USESTAMP true
+#endif /* USE_AESD_CHAR_DEVICE */
 #define STAMPFREQSEC 10
 #define STAMPFORMAT "timestamp:%a, %d %b %Y %T %z"
 
@@ -38,6 +44,7 @@ main(int argc, char *argv[])
       BACKLOG,
       FILENAME,
       daemon,
+      USESTAMP,
       STAMPFREQSEC,
       STAMPFORMAT),
     "execution failed");
