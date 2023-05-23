@@ -414,9 +414,6 @@ aesdsocket_read_line(
   size_t line_buffer_size = 0;
   char *line_buffer = NULL;
   char buffer[BUFFSIZE] = "";
-  off_t file_off = 0;
-
-  TRYC_ERRNO(file_off = lseek(file_fd, 0, SEEK_CUR));
 
   if (*line)
     line_buffer = *line;
@@ -431,8 +428,6 @@ aesdsocket_read_line(
       if ((newline_pointer = strchr(buffer, '\n')) != NULL) {
         eol = true;
         useful_bytes = newline_pointer - buffer + 1;
-        file_off += useful_bytes;
-        TRYC_ERRNO(lseek(file_fd, file_off, SEEK_SET));
       } else {
         useful_bytes = bytes_read;
       }
