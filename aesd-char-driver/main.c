@@ -57,9 +57,6 @@ aesd_open(struct inode *inode, struct file *filp)
   struct aesd_dev *dev = NULL;
 
   PDEBUG("open");
-  /**
-   * TODO: handle open
-   */
 
   dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
   filp->private_data = dev;
@@ -110,6 +107,7 @@ aesd_write(
   ssize_t terminator_position = 0;
   size_t final_count = count;
   char *buffptr = NULL;
+  char *oldptr = NULL;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
 
@@ -139,7 +137,9 @@ aesd_write(
       final_count = terminator_position + 1;
       entry.buffptr = dev->unterminated;
       entry.size = dev->unterminated_size + final_count;
-      aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+      oldptr = aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+      if (oldptr)
+        kfree(oldptr);
       dev->unterminated = NULL;
       dev->unterminated_size = 0;
     }
