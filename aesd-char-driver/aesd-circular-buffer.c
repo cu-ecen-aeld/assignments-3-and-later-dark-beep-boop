@@ -167,7 +167,7 @@ aesd_circular_buffer_add_entry(
   struct aesd_circular_buffer *buffer,
   const struct aesd_buffer_entry *add_entry)
 {
-  char *old = NULL;
+  const char *old = NULL;
   if (buffer->full)
     old = buffer->entry[buffer->in_offs].buffptr;
 
