@@ -32,6 +32,12 @@ int aesd_minor = 0;
 MODULE_AUTHOR("Jesús María Gómez Moreno");
 MODULE_LICENSE("Dual BSD/GPL");
 
+struct aesd_dev_operation
+{
+  bool write_started;
+  struct aesd_dev *dev;
+};
+
 struct aesd_dev aesd_device;
 
 static ssize_t aesd_find_char(const char *buffer, size_t count, char character);
@@ -54,20 +60,43 @@ aesd_find_char(const char *buffer, size_t count, char character)
 int
 aesd_open(struct inode *inode, struct file *filp)
 {
-  struct aesd_dev *dev = NULL;
+  int ok = -ENOMEM;
+  struct aesd_dev_operation *op = NULL;
 
   PDEBUG("open");
 
-  dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
-  filp->private_data = dev;
+  TRY(
+    op = (struct aesd_dev_operation *)
+      kmalloc(sizeof(struct aesd_dev_operation), GFP_KERNEL),
+    "aesd device operation allocation failed");
+  memset(op, 0, sizeof(*op));
 
-  return 0;
+  op->dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+  filp->private_data = op;
+
+  ok = 0;
+
+done:
+  if (ok < 0 && op)
+    kfree(op);
+
+  return ok;
 }
 
 int
 aesd_release(struct inode *inode, struct file *filp)
 {
+  struct aesd_dev_operation *op = filp->private_data;
+  struct aesd_dev *dev = op->dev;
   PDEBUG("release");
+
+  if (op) {
+    if (op->write_started && mutex_is_locked(&dev->lock)) {
+      mutex_unlock(&dev->lock);
+    }
+
+    kfree(op);
+  }
 
   return 0;
 }
@@ -77,7 +106,8 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
   ssize_t retval = -1;
   ssize_t error = 0;
-  struct aesd_dev *dev = filp->private_data;
+  struct aesd_dev_operation *op = filp->private_data;
+  struct aesd_dev *dev = op->dev;
   struct aesd_buffer_entry *current_entry = NULL;
   size_t current_entry_offset;
   size_t final_count = 0;
@@ -130,16 +160,21 @@ aesd_write(
   ssize_t retval = -ENOMEM;
   ssize_t error = 0;
   ssize_t terminator_position = 0;
-  size_t final_count = count;
+  size_t final_count = 0;
   char *buffptr = NULL;
   char *oldptr = NULL;
-  struct aesd_dev *dev = filp->private_data;
+  struct aesd_dev_operation *op = filp->private_data;
+  struct aesd_dev *dev = op->dev;
   struct aesd_buffer_entry entry;
 
   PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 
-  if (mutex_lock_interruptible(&dev->lock))
-    return -ERESTARTSYS;
+  if (!op->write_started) {
+    if (mutex_lock_interruptible(&dev->lock)) {
+      return -ERESTARTSYS;
+    }
+    op->write_started = true;
+  }
 
   if (count) {
     TRY(
@@ -184,8 +219,12 @@ done:
     }
   }
 
-  if (mutex_is_locked(&dev->lock))
-    mutex_unlock(&dev->lock);
+  if (op->write_started && final_count == count) {
+    op->write_started = false;
+    if (mutex_is_locked(&dev->lock)) {
+      mutex_unlock(&dev->lock);
+    }
+  }
 
   return retval;
 }
