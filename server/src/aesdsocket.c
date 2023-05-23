@@ -6,7 +6,6 @@
 #include <asm-generic/socket.h>
 #include <bits/pthreadtypes.h>
 #include <bits/time.h>
-#include <bits/types/struct_itimerspec.h>
 #include <bits/types/timer_t.h>
 #include <errno.h>
 #include <fcntl.h>
