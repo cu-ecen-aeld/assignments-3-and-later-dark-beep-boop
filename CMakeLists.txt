@@ -6,6 +6,7 @@ project(aesd-assignments)
 # reference this working directory
 
 set(CMAKE_C_FLAGS "-pthread")
+string(REPLACE " -Werror" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 set(AUTOTEST_SOURCES
     test/assignment1/Test_hello.c
