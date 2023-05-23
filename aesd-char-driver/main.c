@@ -85,13 +85,29 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
   ssize_t retval = 0;
   struct aesd_dev *dev = filp->private_data;
+  struct aesd_buffer_entry *current_entry = NULL;
+  size_t current_entry_offset;
 
   PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
+
   /**
    * TODO: handle read
    */
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+  current_entry = aesd_circular_buffer_find_entry_offset_for_fpos(
+    &dev->buffer,
+    *f_pos,
+    &current_entry_offset);
+
+  if (current_entry) {
+  }
 
 done:
+  if (mutex_is_locked(&dev->lock))
+    mutex_unlock(&dev->lock);
+
   return retval;
 }
 
@@ -144,7 +160,6 @@ aesd_write(
       dev->unterminated_size = 0;
     }
 
-    f_pos += final_count;
     retval = final_count;
   }
 
