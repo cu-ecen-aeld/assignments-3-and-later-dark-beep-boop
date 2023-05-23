@@ -110,6 +110,7 @@ aesd_write(
   size_t write_count = 0;
   size_t new_entry_size = 0;
   char *buffptr = NULL;
+  char *buffcopy = NULL;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
 
@@ -117,6 +118,14 @@ aesd_write(
   /**
    * TODO: handle write
    */
+
+  TRY(
+    buffcopy = (char *)kmalloc(count * sizeof(char), GFP_KERNEL),
+    "buffer copy allocation failed");
+
+  TRYZ(
+    result = copy_from_user(buffcopy, buf, count),
+    "error while copying from user");
 
   terminating_pos = aesd_find_char(buf, count, TERMINATING_CHARACTER);
   write_count = terminating_pos < 0 ? count : terminating_pos + 1;
@@ -134,9 +143,7 @@ aesd_write(
 
     buffptr += dev->entry_size;
 
-    TRYZ(
-      result = copy_from_user(buffptr, buf, write_count),
-      "error while copying from user");
+    memcpy(buffptr, buffcopy, write_count);
 
     buffptr -= dev->entry_size;
 
@@ -169,6 +176,9 @@ done:
 
   if (mutex_is_locked(&dev->lock))
     mutex_unlock(&dev->lock);
+
+  if (buffcopy)
+    kfree(buffcopy);
 
   return ok;
 }
@@ -245,7 +255,8 @@ aesd_cleanup_module(void)
   /**
    * TODO: cleanup AESD specific poritions here as necessary
    */
-  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index) {
+  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index)
+  {
     if (entryptr->buffptr)
       kfree(entryptr->buffptr);
     entryptr->buffptr = NULL;
