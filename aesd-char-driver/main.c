@@ -24,7 +24,7 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 
-#define TERMINATING_CHARACTER '\n'
+#define TERMINATOR_CHARACTER '\n'
 
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
@@ -101,6 +101,8 @@ aesd_write(
 {
   ssize_t retval = -ENOMEM;
   ssize_t error = 0;
+  ssize_t terminator_position = 0;
+  size_t final_count = count;
   char *buffptr = NULL;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
@@ -126,14 +128,21 @@ aesd_write(
       error = copy_from_user(buffptr, buf, count),
       "error while copying from user");
 
-    entry.buffptr = dev->unterminated;
-    entry.size = dev->unterminated_size;
-    aesd_circular_buffer_add_entry(&dev->buffer, &entry);
-    dev->unterminated = NULL;
-    dev->unterminated_size = 0;
+    terminator_position = aesd_find_char(buffptr, count, TERMINATOR_CHARACTER);
+    if (terminator_position < 0) {
+      final_count = count;
+      dev->unterminated_size += count;
+    } else {
+      final_count = terminator_position + 1;
+      entry.buffptr = dev->unterminated;
+      entry.size = dev->unterminated_size + final_count;
+      aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+      dev->unterminated = NULL;
+      dev->unterminated_size = 0;
+    }
 
-    f_pos += count;
-    retval = count;
+    f_pos += final_count;
+    retval = final_count;
   }
 
 done:
