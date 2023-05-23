@@ -70,13 +70,10 @@ aesd_open(struct inode *inode, struct file *filp)
 int
 aesd_release(struct inode *inode, struct file *filp)
 {
-  struct aesd_dev *dev = filp->private_data;
-
   PDEBUG("release");
   /**
    * TODO: handle release
    */
-
   return 0;
 }
 
@@ -84,10 +81,14 @@ ssize_t
 aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
   ssize_t retval = 0;
+  struct aesd_dev *dev = filp->private_data;
+
   PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
   /**
    * TODO: handle read
    */
+
+done:
   return retval;
 }
 
@@ -100,7 +101,6 @@ aesd_write(
 {
   ssize_t retval = -ENOMEM;
   ssize_t error = 0;
-  size_t new_entry_size = 0;
   char *buffptr = NULL;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
@@ -113,25 +113,34 @@ aesd_write(
   if (mutex_lock_interruptible(&dev->lock))
     return -ERESTARTSYS;
 
-  TRY(
-    buffptr = (char *)kmalloc(count * sizeof(char), GFP_KERNEL),
-    "buffer pointer allocation failed");
+  if (count) {
+    TRY(
+      dev->unterminated = (char *)krealloc(
+        dev->unterminated,
+        (dev->unterminated_size + count) * sizeof(char),
+        GFP_KERNEL),
+      "buffer pointer allocation failed");
+    buffptr = dev->unterminated + dev->unterminated_size;
 
-  TRYZ(
-    error = copy_from_user(buffptr, buf, count),
-    "error while copying from user");
+    TRYZ(
+      error = copy_from_user(buffptr, buf, count),
+      "error while copying from user");
 
-  entry.buffptr = buffptr;
-  entry.size = new_entry_size;
-  aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+    entry.buffptr = dev->unterminated;
+    entry.size = dev->unterminated_size;
+    aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+    dev->unterminated = NULL;
+    dev->unterminated_size = 0;
 
-  f_pos += count;
-  retval = count;
+    f_pos += count;
+    retval = count;
+  }
 
 done:
   if (retval < 0) {
-    if (buffptr) {
-      kfree(buffptr);
+    if (dev->unterminated && dev->unterminated_size == 0) {
+      kfree(dev->unterminated);
+      dev->unterminated = NULL;
     }
 
     if (error < 0) {
