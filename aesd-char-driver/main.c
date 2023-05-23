@@ -18,9 +18,13 @@
 #include <linux/fs.h> // file_operations
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/uaccess.h>
+
+#define TERMINATING_CHARACTER '\n'
 
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
@@ -29,6 +33,23 @@ MODULE_AUTHOR("Jesús María Gómez Moreno");
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
+
+static ssize_t aesd_find_char(const char *buffer, size_t count, char character);
+
+ssize_t
+aesd_find_char(const char *buffer, size_t count, char character)
+{
+  ssize_t result = -1;
+  size_t i = 0;
+
+  while (i < count && buffer[i] != character)
+    ++i;
+
+  if (i < count)
+    result = i;
+
+  return result;
+}
 
 int
 aesd_open(struct inode *inode, struct file *filp)
@@ -49,10 +70,19 @@ aesd_open(struct inode *inode, struct file *filp)
 int
 aesd_release(struct inode *inode, struct file *filp)
 {
+  struct aesd_dev *dev = filp->private_data;
+
   PDEBUG("release");
   /**
    * TODO: handle release
    */
+
+  if (dev->entry_buffptr)
+    kfree(dev->entry_buffptr);
+
+  dev->entry_buffptr = NULL;
+  dev->entry_size = 0;
+
   return 0;
 }
 
@@ -74,13 +104,75 @@ aesd_write(
   size_t count,
   loff_t *f_pos)
 {
-  ssize_t retval = -ENOMEM;
+  ssize_t ok = -ENOMEM;
+  ssize_t result = 0;
+  size_t terminating_pos = 0;
+  size_t write_count = 0;
+  size_t new_entry_size = 0;
+  char *buffptr = NULL;
+  struct aesd_dev *dev = filp->private_data;
+  struct aesd_buffer_entry entry;
+
   PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
   /**
    * TODO: handle write
    */
-  return retval;
+
+  terminating_pos = aesd_find_char(buf, count, TERMINATING_CHARACTER);
+  write_count = terminating_pos < 0 ? count : terminating_pos + 1;
+
+  if (write_count > 0) {
+    if (mutex_lock_interruptible(&dev->lock))
+      return -ERESTARTSYS;
+
+    new_entry_size = dev->entry_size + write_count;
+
+    TRY(
+      buffptr = (char *)
+        krealloc(dev->entry_buffptr, new_entry_size * sizeof(char), GFP_KERNEL),
+      "buffer pointer allocation failed");
+
+    buffptr += dev->entry_size;
+
+    TRYZ(
+      result = copy_from_user(buffptr, buf, write_count),
+      "error while copying from user");
+
+    buffptr -= dev->entry_size;
+
+    if (terminating_pos < 0) {
+      dev->entry_buffptr = buffptr;
+      dev->entry_size = new_entry_size;
+    } else {
+      entry.buffptr = buffptr;
+      entry.size = new_entry_size;
+      aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+      dev->entry_buffptr = NULL;
+      dev->entry_size = 0;
+    }
+
+    f_pos += write_count;
+  }
+
+  ok = 0;
+
+done:
+  if (ok < 0) {
+    if (buffptr && dev->entry_size == 0) {
+      kfree(buffptr);
+    }
+
+    if (result < 0) {
+      ok = result;
+    }
+  }
+
+  if (mutex_is_locked(&dev->lock))
+    mutex_unlock(&dev->lock);
+
+  return ok;
 }
+
 struct file_operations aesd_fops = {
   .owner = THIS_MODULE,
   .read = aesd_read,
@@ -120,6 +212,7 @@ aesd_init_module(void)
   /**
    * TODO: initialize the AESD specific portion of the device
    */
+  mutex_init(&aesd_device.lock);
   aesd_circular_buffer_init(&aesd_device.buffer);
 
   TRYC(result = aesd_setup_cdev(&aesd_device), "character device setup failed");
@@ -144,12 +237,20 @@ void
 aesd_cleanup_module(void)
 {
   dev_t devno = MKDEV(aesd_major, aesd_minor);
+  struct aesd_buffer_entry *entryptr = NULL;
+  uint8_t index = 0;
 
   cdev_del(&aesd_device.cdev);
 
   /**
    * TODO: cleanup AESD specific poritions here as necessary
    */
+  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index) {
+    if (entryptr->buffptr)
+      kfree(entryptr->buffptr);
+    entryptr->buffptr = NULL;
+    entryptr->size = 0;
+  };
 
   unregister_chrdev_region(devno, 1);
 }

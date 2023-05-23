@@ -10,6 +10,7 @@
 
 #include "aesd-circular-buffer.h"
 #include <linux/cdev.h>
+#include <linux/mutex.h>
 
 #define AESD_DEBUG 1 // Remove comment on this line to enable debug
 
@@ -54,12 +55,16 @@
 
 #define TRYC(expr, message) TRYCATCH((expr) < 0, goto done, message)
 
+#define TRYZ(expr, message) TRYCATCH((expr), goto done, message)
+
 struct aesd_dev
 {
   /**
    * TODO: Add structure(s) and locks needed to complete assignment requirements
    */
-  struct aesd_buffer_entry entry;
+  struct mutex lock;
+  char *entry_buffptr;
+  size_t entry_size;
   struct aesd_circular_buffer buffer;
   struct cdev cdev; /* Char device structure      */
 };
