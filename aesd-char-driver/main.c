@@ -83,10 +83,12 @@ aesd_release(struct inode *inode, struct file *filp)
 ssize_t
 aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-  ssize_t retval = 0;
+  ssize_t retval = -1;
+  ssize_t error = 0;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry *current_entry = NULL;
   size_t current_entry_offset;
+  size_t final_count = 0;
 
   PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
@@ -102,9 +104,24 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
     &current_entry_offset);
 
   if (current_entry) {
+    final_count = current_entry->size - current_entry_offset;
+    final_count = count < final_count ? count : final_count;
+
+    TRYZ(
+      error = copy_to_user(
+        buf,
+        current_entry->buffptr + current_entry_offset,
+        final_count),
+      "error while writing in the user buffer");
   }
 
+  *f_pos += final_count;
+  retval = final_count;
+
 done:
+  if (retval < 0 && error != 0)
+    retval = -EFAULT;
+
   if (mutex_is_locked(&dev->lock))
     mutex_unlock(&dev->lock);
 
@@ -170,8 +187,8 @@ done:
       dev->unterminated = NULL;
     }
 
-    if (error < 0) {
-      retval = error;
+    if (error != 0) {
+      retval = -EFAULT;
     }
   }
 
