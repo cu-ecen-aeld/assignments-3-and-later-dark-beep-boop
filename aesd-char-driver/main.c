@@ -77,12 +77,6 @@ aesd_release(struct inode *inode, struct file *filp)
    * TODO: handle release
    */
 
-  if (dev->entry_buffptr)
-    kfree(dev->entry_buffptr);
-
-  dev->entry_buffptr = NULL;
-  dev->entry_size = 0;
-
   return 0;
 }
 
@@ -104,13 +98,10 @@ aesd_write(
   size_t count,
   loff_t *f_pos)
 {
-  ssize_t ok = -ENOMEM;
-  ssize_t result = 0;
-  size_t terminating_pos = 0;
-  size_t write_count = 0;
+  ssize_t retval = -ENOMEM;
+  ssize_t error = 0;
   size_t new_entry_size = 0;
   char *buffptr = NULL;
-  char *buffcopy = NULL;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
 
@@ -119,68 +110,39 @@ aesd_write(
    * TODO: handle write
    */
 
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
   TRY(
-    buffcopy = (char *)kmalloc(count * sizeof(char), GFP_KERNEL),
-    "buffer copy allocation failed");
+    buffptr = (char *)kmalloc(count * sizeof(char), GFP_KERNEL),
+    "buffer pointer allocation failed");
 
   TRYZ(
-    result = copy_from_user(buffcopy, buf, count),
+    error = copy_from_user(buffptr, buf, count),
     "error while copying from user");
 
-  terminating_pos = aesd_find_char(buf, count, TERMINATING_CHARACTER);
-  write_count = terminating_pos < 0 ? count : terminating_pos + 1;
+  entry.buffptr = buffptr;
+  entry.size = new_entry_size;
+  aesd_circular_buffer_add_entry(&dev->buffer, &entry);
 
-  if (write_count > 0) {
-    if (mutex_lock_interruptible(&dev->lock))
-      return -ERESTARTSYS;
-
-    new_entry_size = dev->entry_size + write_count;
-
-    TRY(
-      buffptr = (char *)
-        krealloc(dev->entry_buffptr, new_entry_size * sizeof(char), GFP_KERNEL),
-      "buffer pointer allocation failed");
-
-    buffptr += dev->entry_size;
-
-    memcpy(buffptr, buffcopy, write_count);
-
-    buffptr -= dev->entry_size;
-
-    if (terminating_pos < 0) {
-      dev->entry_buffptr = buffptr;
-      dev->entry_size = new_entry_size;
-    } else {
-      entry.buffptr = buffptr;
-      entry.size = new_entry_size;
-      aesd_circular_buffer_add_entry(&dev->buffer, &entry);
-      dev->entry_buffptr = NULL;
-      dev->entry_size = 0;
-    }
-
-    f_pos += write_count;
-  }
-
-  ok = 0;
+  f_pos += count;
+  retval = count;
 
 done:
-  if (ok < 0) {
-    if (buffptr && dev->entry_size == 0) {
+  if (retval < 0) {
+    if (buffptr) {
       kfree(buffptr);
     }
 
-    if (result < 0) {
-      ok = result;
+    if (error < 0) {
+      retval = error;
     }
   }
 
   if (mutex_is_locked(&dev->lock))
     mutex_unlock(&dev->lock);
 
-  if (buffcopy)
-    kfree(buffcopy);
-
-  return ok;
+  return retval;
 }
 
 struct file_operations aesd_fops = {
