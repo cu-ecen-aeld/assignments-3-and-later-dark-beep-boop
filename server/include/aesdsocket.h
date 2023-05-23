@@ -8,6 +8,7 @@ bool aesdsocket_mainloop(
   const char *port,
   int backlog,
   const char *filename,
+  bool is_regular_file,
   bool daemon,
   bool use_timestamp,
   time_t timestamp_frequency_seconds,

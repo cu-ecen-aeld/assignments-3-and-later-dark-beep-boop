@@ -489,6 +489,7 @@ aesdsocket_mainloop(
   const char *port,
   int backlog,
   const char *filename,
+  bool is_regular_file,
   bool daemon,
   bool use_timestamp,
   time_t timestamp_frequency_seconds,
@@ -620,7 +621,8 @@ done:
   if (write_file_fd != -1)
     close(write_file_fd);
 
-  remove(filename);
+  if (is_regular_file)
+    remove(filename);
 
   return ok;
 }

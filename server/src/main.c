@@ -13,9 +13,11 @@
 #define BACKLOG 20
 #ifdef USE_AESD_CHAR_DEVICE
 #define FILENAME "/dev/aesdchar"
+#define ISREGULAR false
 #define USESTAMP false
 #else
 #define FILENAME "/var/tmp/aesdsocketdata"
+#define ISREGULAR true
 #define USESTAMP true
 #endif /* USE_AESD_CHAR_DEVICE */
 #define STAMPFREQSEC 10
@@ -43,6 +45,7 @@ main(int argc, char *argv[])
       PORT,
       BACKLOG,
       FILENAME,
+      ISREGULAR,
       daemon,
       USESTAMP,
       STAMPFREQSEC,
