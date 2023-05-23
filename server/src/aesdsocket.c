@@ -44,13 +44,12 @@ static bool aesdsocket_open_listening_socket(
 static const void *aesdsocket_get_in_addr(const struct sockaddr *sa);
 static bool aesdsocket_take_timestamp(
   const char *timestamp_format,
-  int file_fd,
+  const char *filename,
   monitor_t *file_monitor);
 
 struct aesdsocket_thread_arg
 {
   int conn_sockfd;
-  int write_file_fd;
   char *filename;
   char *remote_name;
   monitor_t *file_monitor;
@@ -60,7 +59,6 @@ typedef struct aesdsocket_thread_arg aesdsocket_thread_arg_t;
 static void *aesdsocket_start_thread(void *arg);
 static bool aesdsocket_serve(
   int socket_fd,
-  int write_file_fd,
   const char *filename,
   monitor_t *file_monitor);
 static bool aesdsocket_recv_and_write_line(
@@ -180,7 +178,7 @@ aesdsocket_get_in_addr(const struct sockaddr *sa)
 bool
 aesdsocket_take_timestamp(
   const char *timestamp_format,
-  int file_fd,
+  const char *filename,
   monitor_t *file_monitor)
 {
   bool ok = false;
@@ -188,6 +186,13 @@ aesdsocket_take_timestamp(
   struct tm local_timestamp;
   char timestamp_buffer[BUFFSIZE] = "";
   size_t timestamp_size = 0;
+  int file_fd = -1;
+
+  TRYC_ERRNO(
+    file_fd = open(
+      filename,
+      O_WRONLY | O_APPEND | O_CREAT,
+      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
 
   TRYC_ERRNO(clock_gettime(CLOCK_REALTIME, &timestamp));
   TRY(
@@ -208,6 +213,9 @@ aesdsocket_take_timestamp(
   ok = true;
 
 done:
+  if (file_fd != -1)
+    close(file_fd);
+
   return ok;
 }
 
@@ -216,7 +224,6 @@ aesdsocket_start_thread(void *arg)
 {
   aesdsocket_thread_arg_t *thread_arg = arg;
   int conn_sockfd = thread_arg->conn_sockfd;
-  int write_file_fd = thread_arg->write_file_fd;
   char *filename = thread_arg->filename;
   char *remote_name = thread_arg->remote_name;
   monitor_t *file_monitor = thread_arg->file_monitor;
@@ -225,7 +232,7 @@ aesdsocket_start_thread(void *arg)
   syslog(LOG_DEBUG, "Accepted connection from %s\n", remote_name);
 
   TRY(
-    aesdsocket_serve(conn_sockfd, write_file_fd, filename, file_monitor),
+    aesdsocket_serve(conn_sockfd, filename, file_monitor),
     "thread execution failed");
 
 done:
@@ -244,15 +251,17 @@ done:
 }
 
 bool
-aesdsocket_serve(
-  int socket_fd,
-  int write_file_fd,
-  const char *filename,
-  monitor_t *file_monitor)
+aesdsocket_serve(int socket_fd, const char *filename, monitor_t *file_monitor)
 {
   bool ok = false;
+  int write_file_fd = -1;
   int read_file_fd = -1;
 
+  TRYC_ERRNO(
+    write_file_fd = open(
+      filename,
+      O_WRONLY | O_APPEND | O_CREAT,
+      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
   TRY(
     aesdsocket_recv_and_write_line(write_file_fd, socket_fd, file_monitor),
     "line reception or writing failed");
@@ -267,6 +276,9 @@ aesdsocket_serve(
   ok = true;
 
 done:
+  if (write_file_fd != -1)
+    close(write_file_fd);
+
   if (read_file_fd != -1)
     close(read_file_fd);
 
@@ -490,7 +502,6 @@ aesdsocket_mainloop(
 {
   bool ok = false;
   struct sigaction action;
-  int write_file_fd = -1;
   int sockfd = -1;
   int conn_sockfd = -1;
   char remote_name[INET6_ADDRSTRLEN] = {};
@@ -512,12 +523,6 @@ aesdsocket_mainloop(
   TRYC_ERRNO(sigaddset(&action.sa_mask, SIGINT));
   TRYC_ERRNO(sigaction(SIGTERM, &action, NULL));
   TRYC_ERRNO(sigaction(SIGINT, &action, NULL));
-
-  TRYC_ERRNO(
-    write_file_fd = open(
-      filename,
-      O_WRONLY | O_APPEND | O_CREAT,
-      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
 
   TRY(
     aesdsocket_open_listening_socket(&sockfd, port, backlog),
@@ -546,7 +551,7 @@ aesdsocket_mainloop(
       TRY(
         aesdsocket_take_timestamp(
           timestamp_format,
-          write_file_fd,
+          filename,
           write_file_monitor),
         "couldn't take timestamp");
 
@@ -567,7 +572,6 @@ aesdsocket_mainloop(
 
     TRY_ALLOCATE(thread_arg, aesdsocket_thread_arg_t);
     thread_arg->conn_sockfd = conn_sockfd;
-    thread_arg->write_file_fd = write_file_fd;
     TRY_ERRNO(thread_arg->filename = strdup(filename));
     TRY_ERRNO(thread_arg->remote_name = strndup(remote_name, INET6_ADDRSTRLEN));
     thread_arg->file_monitor = write_file_monitor;
@@ -610,9 +614,6 @@ done:
 
   if (sockfd != -1)
     close(sockfd);
-
-  if (write_file_fd != -1)
-    close(write_file_fd);
 
   if (is_regular_file)
     remove(filename);
