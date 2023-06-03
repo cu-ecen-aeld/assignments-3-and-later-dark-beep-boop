@@ -32,12 +32,6 @@ int aesd_minor = 0;
 MODULE_AUTHOR("Jesús María Gómez Moreno");
 MODULE_LICENSE("Dual BSD/GPL");
 
-struct aesd_dev_operation
-{
-  bool write_started;
-  struct aesd_dev *dev;
-};
-
 struct aesd_dev aesd_device;
 
 static ssize_t aesd_find_char(const char *buffer, size_t count, char character);
@@ -60,43 +54,17 @@ aesd_find_char(const char *buffer, size_t count, char character)
 int
 aesd_open(struct inode *inode, struct file *filp)
 {
-  int ok = -ENOMEM;
-  struct aesd_dev_operation *op = NULL;
-
   PDEBUG("open");
 
-  TRY(
-    op = (struct aesd_dev_operation *)
-      kmalloc(sizeof(struct aesd_dev_operation), GFP_KERNEL),
-    "aesd device operation allocation failed");
-  memset(op, 0, sizeof(*op));
+  filp->private_data = container_of(inode->i_cdev, struct aesd_dev, cdev);
 
-  op->dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
-  filp->private_data = op;
-
-  ok = 0;
-
-done:
-  if (ok < 0 && op)
-    kfree(op);
-
-  return ok;
+  return 0;
 }
 
 int
 aesd_release(struct inode *inode, struct file *filp)
 {
-  struct aesd_dev_operation *op = filp->private_data;
-  struct aesd_dev *dev = op->dev;
   PDEBUG("release");
-
-  if (op) {
-    if (op->write_started && mutex_is_locked(&dev->lock)) {
-      mutex_unlock(&dev->lock);
-    }
-
-    kfree(op);
-  }
 
   return 0;
 }
@@ -106,17 +74,14 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
   ssize_t retval = -1;
   ssize_t error = 0;
-  struct aesd_dev_operation *op = filp->private_data;
-  struct aesd_dev *dev = op->dev;
+  struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry *current_entry = NULL;
+  struct aesd_buffer_entry tmp_entry;
   size_t current_entry_offset;
   size_t final_count = 0;
 
   PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
-  /**
-   * TODO: handle read
-   */
   if (mutex_lock_interruptible(&dev->lock))
     return -ERESTARTSYS;
 
@@ -124,6 +89,12 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
     &dev->buffer,
     *f_pos,
     &current_entry_offset);
+
+  if (!current_entry && current_entry_offset < dev->unterminated_size) {
+    tmp_entry.buffptr = dev->unterminated_buffptr;
+    tmp_entry.size = dev->unterminated_size;
+    current_entry = &tmp_entry;
+  }
 
   if (current_entry) {
     final_count = current_entry->size - current_entry_offset;
@@ -163,27 +134,35 @@ aesd_write(
   size_t final_count = 0;
   char *buffptr = NULL;
   const char *oldptr = NULL;
-  struct aesd_dev_operation *op = filp->private_data;
-  struct aesd_dev *dev = op->dev;
+  struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
+  size_t index = 0;
+  struct aesd_buffer_entry *entryptr = NULL;
 
   PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 
-  if (!op->write_started) {
-    if (mutex_lock_interruptible(&dev->lock)) {
-      return -ERESTARTSYS;
-    }
-    op->write_started = true;
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+  /*
+  PDEBUG("BEFORE WRITE\n");
+  PDEBUG("unterminated_buffptr = %s\n", dev->unterminated_buffptr);
+  PDEBUG("unterminated_size = %lu\n", dev->unterminated_size);
+  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index)
+  {
+    PDEBUG("buffer[%lu].buffptr = %s\n", index, entryptr->buffptr);
+    PDEBUG("buffer[%lu].size = %lu\n", index, entryptr->size);
   }
+  */
 
   if (count) {
     TRY(
-      dev->unterminated = (char *)krealloc(
-        dev->unterminated,
+      dev->unterminated_buffptr = (char *)krealloc(
+        dev->unterminated_buffptr,
         (dev->unterminated_size + count) * sizeof(char),
         GFP_KERNEL),
       "buffer pointer allocation failed");
-    buffptr = dev->unterminated + dev->unterminated_size;
+    buffptr = dev->unterminated_buffptr + dev->unterminated_size;
 
     TRYZ(
       error = copy_from_user(buffptr, buf, count),
@@ -192,26 +171,40 @@ aesd_write(
     terminator_position = aesd_find_char(buffptr, count, TERMINATOR_CHARACTER);
     if (terminator_position < 0) {
       final_count = count;
-      dev->unterminated_size += count;
+      dev->unterminated_size += final_count;
     } else {
       final_count = terminator_position + 1;
-      entry.buffptr = dev->unterminated;
+      entry.buffptr = dev->unterminated_buffptr;
       entry.size = dev->unterminated_size + final_count;
       oldptr = aesd_circular_buffer_add_entry(&dev->buffer, &entry);
       if (oldptr)
         kfree(oldptr);
-      dev->unterminated = NULL;
+      dev->unterminated_buffptr = NULL;
       dev->unterminated_size = 0;
     }
 
+    *f_pos += final_count;
     retval = final_count;
   }
 
+  /*
+  PDEBUG("AFTER WRITE\n");
+  PDEBUG("unterminated_buffptr = %s\n", dev->unterminated_buffptr);
+  PDEBUG("unterminated_size = %lu\n", dev->unterminated_size);
+  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index)
+  {
+    PDEBUG("buffer[%lu].buffptr = %s\n", index, entryptr->buffptr);
+    PDEBUG("buffer[%lu].size = %lu\n", index, entryptr->size);
+  }
+  PDEBUG("final_count = %lu\n", final_count);
+  PDEBUG("*f_pos = %llu\n", *f_pos);
+  */
+
 done:
   if (retval < 0) {
-    if (dev->unterminated && dev->unterminated_size == 0) {
-      kfree(dev->unterminated);
-      dev->unterminated = NULL;
+    if (dev->unterminated_buffptr && dev->unterminated_size == 0) {
+      kfree(dev->unterminated_buffptr);
+      dev->unterminated_buffptr = NULL;
     }
 
     if (error != 0) {
@@ -219,18 +212,37 @@ done:
     }
   }
 
-  if (op->write_started && final_count == count) {
-    op->write_started = false;
-    if (mutex_is_locked(&dev->lock)) {
-      mutex_unlock(&dev->lock);
-    }
-  }
+  mutex_unlock(&dev->lock);
+
+  return retval;
+}
+
+loff_t
+aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+  struct aesd_dev *dev = filp->private_data;
+  loff_t retval = 0;
+
+  PDEBUG("seeking offset %llu with whence %d\n", offset, whence);
+
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+  retval = fixed_size_llseek(
+    filp,
+    offset,
+    whence,
+    aesd_circular_buffer_size(&dev->buffer));
+
+  mutex_unlock(&dev->lock);
+  PDEBUG("new file offset: %llu\n", retval);
 
   return retval;
 }
 
 struct file_operations aesd_fops = {
   .owner = THIS_MODULE,
+  .llseek = aesd_llseek,
   .read = aesd_read,
   .write = aesd_write,
   .open = aesd_open,
@@ -295,17 +307,14 @@ aesd_cleanup_module(void)
 
   cdev_del(&aesd_device.cdev);
 
-  if (aesd_device.unterminated)
-    kfree(aesd_device.unterminated);
-  aesd_device.unterminated = NULL;
-  aesd_device.unterminated_size = 0;
+  if (aesd_device.unterminated_buffptr)
+    kfree(aesd_device.unterminated_buffptr);
 
   AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index)
   {
-    if (entryptr->buffptr)
+    if (entryptr->buffptr) {
       kfree(entryptr->buffptr);
-    entryptr->buffptr = NULL;
-    entryptr->size = 0;
+    }
   };
 
   unregister_chrdev_region(devno, 1);

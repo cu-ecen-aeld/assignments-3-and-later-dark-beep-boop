@@ -60,7 +60,7 @@
 struct aesd_dev
 {
   struct mutex lock;
-  char *unterminated;
+  char *unterminated_buffptr;
   size_t unterminated_size;
   struct aesd_circular_buffer buffer;
   struct cdev cdev; /* Char device structure      */

@@ -148,8 +148,7 @@ aesd_circular_buffer_find_entry_offset_for_fpos(
       &entry_position,
       &remaining);
 
-  if (result)
-    *entry_offset_byte_rtn = remaining;
+  *entry_offset_byte_rtn = remaining;
 
   return result;
 }
@@ -181,6 +180,26 @@ aesd_circular_buffer_add_entry(
     buffer->full = true;
 
   return old;
+}
+
+/**
+ * @return the current total size of the stored data
+ */
+size_t
+aesd_circular_buffer_size(const struct aesd_circular_buffer *buffer)
+{
+  const struct aesd_buffer_entry *entryptr = NULL;
+  uint8_t index;
+  size_t size = 0;
+
+  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, buffer, index)
+  {
+    if (entryptr->buffptr) {
+      size += entryptr->size;
+    }
+  }
+
+  return size;
 }
 
 /**
