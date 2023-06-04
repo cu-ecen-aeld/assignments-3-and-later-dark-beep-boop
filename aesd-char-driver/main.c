@@ -12,8 +12,10 @@
  */
 
 #include "aesd-circular-buffer.h"
+#include "aesd_ioctl.h"
 #include "aesdchar.h"
 
+#include <asm/uaccess.h>
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include <linux/init.h>
@@ -21,10 +23,12 @@
 #include <linux/mutex.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 
 #define TERMINATOR_CHARACTER '\n'
+#define MSG_MAX_LEN 100
 
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
@@ -35,6 +39,10 @@ MODULE_LICENSE("Dual BSD/GPL");
 struct aesd_dev aesd_device;
 
 static ssize_t aesd_find_char(const char *buffer, size_t count, char character);
+static long aesd_iocseekto(
+  struct file *filp,
+  uint32_t write_cmd,
+  uint32_t wirte_cmd_offset);
 
 ssize_t
 aesd_find_char(const char *buffer, size_t count, char character)
@@ -47,6 +55,42 @@ aesd_find_char(const char *buffer, size_t count, char character)
 
   if (i < count)
     result = i;
+
+  return result;
+}
+
+static long
+aesd_iocseekto(struct file *filp, uint32_t write_cmd, uint32_t write_cmd_offset)
+{
+  long result = -EINVAL;
+  struct aesd_dev *dev = filp->private_data;
+  ssize_t f_pos;
+
+  PDEBUG("ENTERING IOCSEEKTO");
+  PDEBUG(
+    "seeking write command %u with offset %u",
+    write_cmd,
+    write_cmd_offset);
+
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+  f_pos = aesd_circular_buffer_find_fpos_for_entry_offset(
+    &dev->buffer,
+    write_cmd,
+    write_cmd_offset);
+
+  if (f_pos >= 0) {
+    result = fixed_size_llseek(
+      filp,
+      f_pos,
+      SEEK_SET,
+      aesd_circular_buffer_size(&dev->buffer));
+  }
+
+  mutex_unlock(&dev->lock);
+
+  PDEBUG("EXITING IOCSEEKTO");
 
   return result;
 }
@@ -74,36 +118,55 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
   ssize_t retval = -1;
   ssize_t error = 0;
+  ssize_t remaining = 0;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry *current_entry = NULL;
   struct aesd_buffer_entry tmp_entry;
-  size_t current_entry_offset;
+  size_t current_entry_byte;
   size_t final_count = 0;
+  char msg_buffer[MSG_MAX_LEN] = {};
 
+  PDEBUG("ENTERING READ");
   PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
   if (mutex_lock_interruptible(&dev->lock))
     return -ERESTARTSYS;
 
+  PDEBUG("current buffer size is %zu", aesd_circular_buffer_size(&dev->buffer));
+
   current_entry = aesd_circular_buffer_find_entry_offset_for_fpos(
     &dev->buffer,
     *f_pos,
-    &current_entry_offset);
+    &current_entry_byte);
 
-  if (!current_entry && current_entry_offset < dev->unterminated_size) {
+  if (
+    !current_entry &&
+    ((remaining = *f_pos - aesd_circular_buffer_size(&dev->buffer)) <
+     dev->unterminated_size)) {
+    current_entry_byte = remaining;
     tmp_entry.buffptr = dev->unterminated_buffptr;
     tmp_entry.size = dev->unterminated_size;
     current_entry = &tmp_entry;
   }
 
+  if (!current_entry)
+    PDEBUG("trying to read out of the buffer");
+
   if (current_entry) {
-    final_count = current_entry->size - current_entry_offset;
+    final_count = current_entry->size - current_entry_byte;
     final_count = count < final_count ? count : final_count;
+
+    strncpy(
+      msg_buffer,
+      current_entry->buffptr + current_entry_byte,
+      final_count);
+    msg_buffer[final_count] = '\0';
+    PDEBUG("reading %zu bytes, %s", final_count, msg_buffer);
 
     TRYZ(
       error = copy_to_user(
         buf,
-        current_entry->buffptr + current_entry_offset,
+        current_entry->buffptr + current_entry_byte,
         final_count),
       "error while writing in the user buffer");
   }
@@ -112,11 +175,12 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
   retval = final_count;
 
 done:
+  PDEBUG("EXITING READ");
+
   if (retval < 0 && error != 0)
     retval = -EFAULT;
 
-  if (mutex_is_locked(&dev->lock))
-    mutex_unlock(&dev->lock);
+  mutex_unlock(&dev->lock);
 
   return retval;
 }
@@ -138,22 +202,13 @@ aesd_write(
   struct aesd_buffer_entry entry;
   size_t index = 0;
   struct aesd_buffer_entry *entryptr = NULL;
+  char msg_buffer[MSG_MAX_LEN] = {};
 
+  PDEBUG("ENTERING WRITE");
   PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 
   if (mutex_lock_interruptible(&dev->lock))
     return -ERESTARTSYS;
-
-  /*
-  PDEBUG("BEFORE WRITE\n");
-  PDEBUG("unterminated_buffptr = %s\n", dev->unterminated_buffptr);
-  PDEBUG("unterminated_size = %lu\n", dev->unterminated_size);
-  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index)
-  {
-    PDEBUG("buffer[%lu].buffptr = %s\n", index, entryptr->buffptr);
-    PDEBUG("buffer[%lu].size = %lu\n", index, entryptr->size);
-  }
-  */
 
   if (count) {
     TRY(
@@ -167,6 +222,10 @@ aesd_write(
     TRYZ(
       error = copy_from_user(buffptr, buf, count),
       "error while copying from user");
+
+    strncpy(msg_buffer, buffptr, count);
+    msg_buffer[count] = '\0';
+    PDEBUG("written %zu bytes, %s", count, msg_buffer);
 
     terminator_position = aesd_find_char(buffptr, count, TERMINATOR_CHARACTER);
     if (terminator_position < 0) {
@@ -187,20 +246,23 @@ aesd_write(
     retval = final_count;
   }
 
-  /*
-  PDEBUG("AFTER WRITE\n");
-  PDEBUG("unterminated_buffptr = %s\n", dev->unterminated_buffptr);
-  PDEBUG("unterminated_size = %lu\n", dev->unterminated_size);
+  strncpy(msg_buffer, dev->unterminated_buffptr, dev->unterminated_size);
+  msg_buffer[dev->unterminated_size] = '\0';
+  PDEBUG("unterminated buffptr = %s", msg_buffer);
+  PDEBUG("unterminated size = %lu", dev->unterminated_size);
   AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index)
   {
-    PDEBUG("buffer[%lu].buffptr = %s\n", index, entryptr->buffptr);
-    PDEBUG("buffer[%lu].size = %lu\n", index, entryptr->size);
+    strncpy(msg_buffer, entryptr->buffptr, entryptr->size);
+    msg_buffer[entryptr->size] = '\0';
+    PDEBUG("buffer[%lu].buffptr = %s", index, msg_buffer);
+    PDEBUG("buffer[%lu].size = %lu", index, entryptr->size);
   }
-  PDEBUG("final_count = %lu\n", final_count);
-  PDEBUG("*f_pos = %llu\n", *f_pos);
-  */
+  PDEBUG("final count = %lu", final_count);
+  PDEBUG("f pos = %llu", *f_pos);
 
 done:
+  PDEBUG("EXITING WRITE");
+
   if (retval < 0) {
     if (dev->unterminated_buffptr && dev->unterminated_size == 0) {
       kfree(dev->unterminated_buffptr);
@@ -223,6 +285,7 @@ aesd_llseek(struct file *filp, loff_t offset, int whence)
   struct aesd_dev *dev = filp->private_data;
   loff_t retval = 0;
 
+  PDEBUG("ENTERING LLSEEK");
   PDEBUG("seeking offset %llu with whence %d\n", offset, whence);
 
   if (mutex_lock_interruptible(&dev->lock))
@@ -236,6 +299,35 @@ aesd_llseek(struct file *filp, loff_t offset, int whence)
 
   mutex_unlock(&dev->lock);
   PDEBUG("new file offset: %llu\n", retval);
+  PDEBUG("EXITING LLSEEK");
+
+  return retval;
+}
+
+long
+aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+  uint64_t local_64_arg;
+  long retval;
+
+  PDEBUG("ENTERING IOCTL");
+  PDEBUG("Executing ioctl %u", cmd);
+
+  switch (cmd) {
+    case AESDCHAR_IOCSEEKTO:
+      if (!get_user(local_64_arg, (uint64_t *)arg))
+        retval = aesd_iocseekto(
+          filp,
+          ((struct aesd_seekto *)local_64_arg)->write_cmd,
+          ((struct aesd_seekto *)local_64_arg)->write_cmd_offset);
+      else
+        retval = -EFAULT;
+      break;
+    default:
+      retval = -ENOTTY;
+  }
+
+  PDEBUG("EXITING IOCTL");
 
   return retval;
 }
@@ -245,6 +337,7 @@ struct file_operations aesd_fops = {
   .llseek = aesd_llseek,
   .read = aesd_read,
   .write = aesd_write,
+  .unlocked_ioctl = aesd_ioctl,
   .open = aesd_open,
   .release = aesd_release,
 };
