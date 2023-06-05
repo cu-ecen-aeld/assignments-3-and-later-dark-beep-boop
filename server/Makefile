@@ -2,11 +2,12 @@ TARGET_EXEC := aesdsocket
 
 BUILD_DIR := build
 DST_DIR := .
-INCLUDE_DIR := include
+INCLUDE_DIRS := include ../aesd-char-driver
 SRC_DIR := src
 FILES := main aesdsocket node doubly_linked_list queue monitor
 
 OBJ_FILES := $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(FILES)))
+INCLUDES := $(addprefix -I,$(INCLUDE_DIRS))
 
 CC ?= $(CROSS_COMPILE)gcc
 CFLAGS ?= -g -Wall -Werror -O2
@@ -22,7 +23,7 @@ $(BUILD_DIR)/$(TARGET_EXEC): $(OBJ_FILES)
 
 $(OBJ_FILES): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(INCLUDE_DIR) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 install:
 	mkdir -p $(DST_DIR)

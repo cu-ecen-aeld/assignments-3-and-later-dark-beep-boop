@@ -12,6 +12,7 @@ bool aesdsocket_mainloop(
   bool daemon,
   bool use_timestamp,
   time_t timestamp_frequency_seconds,
-  const char *timestamp_format);
+  const char *timestamp_format,
+  const char *seekto_command);
 
 #endif /* AESDSOCKET_H */

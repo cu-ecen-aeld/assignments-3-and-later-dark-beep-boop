@@ -22,6 +22,7 @@
 #endif /* USE_AESD_CHAR_DEVICE */
 #define STAMPFREQSEC 10
 #define STAMPFORMAT "timestamp:%a, %d %b %Y %T %z"
+#define SEEKTO_COMMAND "AESDCHAR_IOCSEEKTO"
 
 int
 main(int argc, char *argv[])
@@ -49,7 +50,8 @@ main(int argc, char *argv[])
       daemon,
       USESTAMP,
       STAMPFREQSEC,
-      STAMPFORMAT),
+      STAMPFORMAT,
+      SEEKTO_COMMAND),
     "execution failed");
 
   exit_status = EXIT_SUCCESS;

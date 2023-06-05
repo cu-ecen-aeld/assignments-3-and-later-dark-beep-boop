@@ -25,8 +25,7 @@ static inline uint8_t aesd_circular_buffer_entry_array_capacity(
   const struct aesd_circular_buffer *buffer);
 static inline uint8_t aesd_circular_buffer_relative_entry_offset(
   const struct aesd_circular_buffer *buffer,
-  uint8_t entry_offset,
-  bool first);
+  uint8_t entry_offset);
 static inline uint8_t aesd_circular_buffer_absolute_entry_offset(
   const struct aesd_circular_buffer *buffer,
   uint8_t entry_offset);
@@ -54,14 +53,13 @@ aesd_circular_buffer_entry_array_capacity(
 uint8_t
 aesd_circular_buffer_relative_entry_offset(
   const struct aesd_circular_buffer *buffer,
-  uint8_t entry_offset,
-  bool first)
+  uint8_t entry_offset)
 {
   uint8_t result;
   uint8_t adjusted_entry_offset =
     entry_offset % aesd_circular_buffer_entry_array_capacity(buffer);
 
-  if (buffer->full && !first && adjusted_entry_offset == buffer->in_offs)
+  if (buffer->full && adjusted_entry_offset == buffer->in_offs)
     result = aesd_circular_buffer_entry_array_capacity(buffer);
   else if (adjusted_entry_offset >= buffer->out_offs)
     result = adjusted_entry_offset - buffer->out_offs;
@@ -164,47 +162,24 @@ aesd_circular_buffer_find_entry_offset_for_fpos(
   uint8_t entry_offset = buffer->out_offs;
   struct aesd_buffer_entry *result = NULL;
 
-  PDEBUG("ENTERING FIND ENTRY OFFSET");
-  PDEBUG(
-    "entry array size = %u",
-    aesd_circular_buffer_entry_array_size(buffer));
-  PDEBUG("out offs = %u", buffer->out_offs);
-
-  if (
-    aesd_circular_buffer_relative_entry_offset(buffer, entry_offset, true) <
-    aesd_circular_buffer_entry_array_size(buffer)) {
+  if (0 < aesd_circular_buffer_entry_array_size(buffer)) {
     result = aesd_circular_buffer_iterate_find_entry_offset_for_fpos(
       buffer,
       &entry_offset,
       &remaining);
-    PDEBUG("entry offset = %u", entry_offset);
-    PDEBUG(
-      "relative entry offset = %u",
-      aesd_circular_buffer_relative_entry_offset(buffer, entry_offset, false));
-    PDEBUG("remaining = %zu", remaining);
-    PDEBUG("result = %p", result);
   }
 
-  while (
-    !result &&
-    aesd_circular_buffer_relative_entry_offset(buffer, entry_offset, false) <
-      aesd_circular_buffer_entry_array_size(buffer)) {
+  while (!result &&
+         aesd_circular_buffer_relative_entry_offset(buffer, entry_offset) <
+           aesd_circular_buffer_entry_array_size(buffer)) {
     result = aesd_circular_buffer_iterate_find_entry_offset_for_fpos(
       buffer,
       &entry_offset,
       &remaining);
-    PDEBUG("entry offset = %u", entry_offset);
-    PDEBUG(
-      "relative entry offset = %u",
-      aesd_circular_buffer_relative_entry_offset(buffer, entry_offset, false));
-    PDEBUG("remaining = %zu", remaining);
-    PDEBUG("result = %p", result);
   }
 
   if (result)
     *entry_offset_byte_rtn = remaining;
-
-  PDEBUG("EXITING FIND ENTRY OFFSET");
 
   return result;
 }
@@ -235,13 +210,17 @@ aesd_circular_buffer_find_fpos_for_entry_offset(
                             entry_offset)]
                           .size) {
     iter = buffer->out_offs;
-    result = buffer->entry[iter].size;
-    aesd_circular_buffer_next_entry_offset(buffer, iter);
+    result = 0;
 
-    while (aesd_circular_buffer_relative_entry_offset(buffer, iter, false) <
+    if (0 < entry_offset) {
+      result += buffer->entry[iter].size;
+      iter = aesd_circular_buffer_next_entry_offset(buffer, iter);
+    }
+
+    while (aesd_circular_buffer_relative_entry_offset(buffer, iter) <
            entry_offset) {
       result += buffer->entry[iter].size;
-      aesd_circular_buffer_next_entry_offset(buffer, iter);
+      iter = aesd_circular_buffer_next_entry_offset(buffer, iter);
     }
 
     result += entry_offset_byte;

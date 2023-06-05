@@ -66,7 +66,6 @@ aesd_iocseekto(struct file *filp, uint32_t write_cmd, uint32_t write_cmd_offset)
   struct aesd_dev *dev = filp->private_data;
   ssize_t f_pos;
 
-  PDEBUG("ENTERING IOCSEEKTO");
   PDEBUG(
     "seeking write command %u with offset %u",
     write_cmd,
@@ -89,8 +88,6 @@ aesd_iocseekto(struct file *filp, uint32_t write_cmd, uint32_t write_cmd_offset)
   }
 
   mutex_unlock(&dev->lock);
-
-  PDEBUG("EXITING IOCSEEKTO");
 
   return result;
 }
@@ -126,13 +123,10 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
   size_t final_count = 0;
   char msg_buffer[MSG_MAX_LEN] = {};
 
-  PDEBUG("ENTERING READ");
   PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
   if (mutex_lock_interruptible(&dev->lock))
     return -ERESTARTSYS;
-
-  PDEBUG("current buffer size is %zu", aesd_circular_buffer_size(&dev->buffer));
 
   current_entry = aesd_circular_buffer_find_entry_offset_for_fpos(
     &dev->buffer,
@@ -149,9 +143,6 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
     current_entry = &tmp_entry;
   }
 
-  if (!current_entry)
-    PDEBUG("trying to read out of the buffer");
-
   if (current_entry) {
     final_count = current_entry->size - current_entry_byte;
     final_count = count < final_count ? count : final_count;
@@ -160,8 +151,7 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
       msg_buffer,
       current_entry->buffptr + current_entry_byte,
       final_count);
-    msg_buffer[final_count] = '\0';
-    PDEBUG("reading %zu bytes, %s", final_count, msg_buffer);
+    PDEBUG("writing %s", msg_buffer);
 
     TRYZ(
       error = copy_to_user(
@@ -175,8 +165,6 @@ aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
   retval = final_count;
 
 done:
-  PDEBUG("EXITING READ");
-
   if (retval < 0 && error != 0)
     retval = -EFAULT;
 
@@ -200,11 +188,8 @@ aesd_write(
   const char *oldptr = NULL;
   struct aesd_dev *dev = filp->private_data;
   struct aesd_buffer_entry entry;
-  size_t index = 0;
-  struct aesd_buffer_entry *entryptr = NULL;
   char msg_buffer[MSG_MAX_LEN] = {};
 
-  PDEBUG("ENTERING WRITE");
   PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 
   if (mutex_lock_interruptible(&dev->lock))
@@ -224,8 +209,7 @@ aesd_write(
       "error while copying from user");
 
     strncpy(msg_buffer, buffptr, count);
-    msg_buffer[count] = '\0';
-    PDEBUG("written %zu bytes, %s", count, msg_buffer);
+    PDEBUG("writing %s", msg_buffer);
 
     terminator_position = aesd_find_char(buffptr, count, TERMINATOR_CHARACTER);
     if (terminator_position < 0) {
@@ -246,22 +230,7 @@ aesd_write(
     retval = final_count;
   }
 
-  strncpy(msg_buffer, dev->unterminated_buffptr, dev->unterminated_size);
-  msg_buffer[dev->unterminated_size] = '\0';
-  PDEBUG("unterminated buffptr = %s", msg_buffer);
-  PDEBUG("unterminated size = %lu", dev->unterminated_size);
-  AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index)
-  {
-    strncpy(msg_buffer, entryptr->buffptr, entryptr->size);
-    msg_buffer[entryptr->size] = '\0';
-    PDEBUG("buffer[%lu].buffptr = %s", index, msg_buffer);
-    PDEBUG("buffer[%lu].size = %lu", index, entryptr->size);
-  }
-  PDEBUG("final count = %lu", final_count);
-  PDEBUG("f pos = %llu", *f_pos);
-
 done:
-  PDEBUG("EXITING WRITE");
 
   if (retval < 0) {
     if (dev->unterminated_buffptr && dev->unterminated_size == 0) {
@@ -310,24 +279,21 @@ aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
   uint64_t local_64_arg;
   long retval;
 
-  PDEBUG("ENTERING IOCTL");
-  PDEBUG("Executing ioctl %u", cmd);
-
   switch (cmd) {
     case AESDCHAR_IOCSEEKTO:
-      if (!get_user(local_64_arg, (uint64_t *)arg))
+      PDEBUG("Executing ioctl AESDCHAR_IOCSEEKTO");
+      if (!get_user(local_64_arg, (uint64_t *)arg)) {
         retval = aesd_iocseekto(
           filp,
-          ((struct aesd_seekto *)local_64_arg)->write_cmd,
-          ((struct aesd_seekto *)local_64_arg)->write_cmd_offset);
-      else
+          ((struct aesd_seekto *)&local_64_arg)->write_cmd,
+          ((struct aesd_seekto *)&local_64_arg)->write_cmd_offset);
+      } else {
         retval = -EFAULT;
+      }
       break;
     default:
       retval = -ENOTTY;
   }
-
-  PDEBUG("EXITING IOCTL");
 
   return retval;
 }

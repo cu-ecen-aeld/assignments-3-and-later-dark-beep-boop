@@ -1,4 +1,5 @@
 #include "aesdsocket.h"
+#include "aesd_ioctl.h"
 
 #include <arpa/inet.h>
 #include <asm-generic/errno-base.h>
@@ -17,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syslog.h>
@@ -25,6 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "aesd_ioctl.h"
 #include "monitor.h"
 #include "queue.h"
 #include "try.h"
@@ -53,6 +56,7 @@ struct aesdsocket_thread_arg
   char *filename;
   char *remote_name;
   monitor_t *file_monitor;
+  const char *seekto_command;
 };
 typedef struct aesdsocket_thread_arg aesdsocket_thread_arg_t;
 
@@ -60,11 +64,8 @@ static void *aesdsocket_start_thread(void *arg);
 static bool aesdsocket_serve(
   int socket_fd,
   const char *filename,
-  monitor_t *file_monitor);
-static bool aesdsocket_recv_and_write_line(
-  int file_fd,
-  int socket_fd,
-  monitor_t *file_monitor);
+  monitor_t *file_monitor,
+  const char *seekto_command);
 static bool aesdsocket_recv_line(int socket_fd, char **line);
 static bool aesdsocket_write_line(
   int file_fd,
@@ -205,7 +206,7 @@ aesdsocket_take_timestamp(
   timestamp_buffer[timestamp_size] = '\n';
   timestamp_buffer[timestamp_size + 1] = '\0';
 
-  syslog(LOG_DEBUG, "%s", timestamp_buffer);
+  syslog(LOG_DEBUG, "%s\n", timestamp_buffer);
   TRY(
     aesdsocket_write_line(file_fd, timestamp_buffer, file_monitor),
     "couldn't write the timestamp to the file");
@@ -227,12 +228,13 @@ aesdsocket_start_thread(void *arg)
   char *filename = thread_arg->filename;
   char *remote_name = thread_arg->remote_name;
   monitor_t *file_monitor = thread_arg->file_monitor;
+  const char *seekto_command = thread_arg->seekto_command;
   free(thread_arg);
 
   syslog(LOG_DEBUG, "Accepted connection from %s\n", remote_name);
 
   TRY(
-    aesdsocket_serve(conn_sockfd, filename, file_monitor),
+    aesdsocket_serve(conn_sockfd, filename, file_monitor, seekto_command),
     "thread execution failed");
 
 done:
@@ -251,61 +253,80 @@ done:
 }
 
 bool
-aesdsocket_serve(int socket_fd, const char *filename, monitor_t *file_monitor)
-{
-  bool ok = false;
-  int write_file_fd = -1;
-  int read_file_fd = -1;
-
-  TRYC_ERRNO(
-    write_file_fd = open(
-      filename,
-      O_WRONLY | O_APPEND | O_CREAT,
-      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
-  TRY(
-    aesdsocket_recv_and_write_line(write_file_fd, socket_fd, file_monitor),
-    "line reception or writing failed");
-
-  TRYC_ERRNO(
-    read_file_fd =
-      open(filename, O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
-  TRY(
-    aesdsocket_read_and_send_file(socket_fd, read_file_fd, file_monitor),
-    "line reading or sending failed");
-
-  ok = true;
-
-done:
-  if (write_file_fd != -1)
-    close(write_file_fd);
-
-  if (read_file_fd != -1)
-    close(read_file_fd);
-
-  return ok;
-}
-
-bool
-aesdsocket_recv_and_write_line(
-  int file_fd,
+aesdsocket_serve(
   int socket_fd,
-  monitor_t *file_monitor)
+  const char *filename,
+  monitor_t *file_monitor,
+  const char *seekto_command)
 {
   bool ok = false;
   char *line = NULL;
+  int file_fd = -1;
+  struct aesd_seekto seekto_arg;
+  char *command_ptr;
+  size_t command_size;
+  char *command_offset_ptr;
+  size_t command_offset_size;
+  char *end_ptr;
+  char command_buffer[BUFFSIZE] = {};
+
+  TRYC_ERRNO(
+    file_fd = open(
+      filename,
+      O_RDWR | O_APPEND | O_CREAT,
+      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
 
   TRY(aesdsocket_recv_line(socket_fd, &line), "line reception failed");
   if (line) {
-    TRY(
-      aesdsocket_write_line(file_fd, line, file_monitor),
-      "line writing failed");
+    if (strncmp(line, seekto_command, strlen(seekto_command)) == 0) {
+      command_ptr = strchr(line, ':');
+      if (command_ptr) {
+        ++command_ptr;
+        command_offset_ptr = strchr(command_ptr, ',');
+        if (command_offset_ptr) {
+          command_size = command_offset_ptr - command_ptr;
+          ++command_offset_ptr;
+          end_ptr = strchr(command_offset_ptr, '\n');
+          if (end_ptr) {
+            command_offset_size = end_ptr - command_offset_ptr;
+            strncpy(command_buffer, command_ptr, command_size);
+            command_buffer[command_size] = '\0';
+            seekto_arg.write_cmd = atoi(command_buffer);
+            strncpy(command_buffer, command_offset_ptr, command_offset_size);
+            command_buffer[command_offset_size] = '\0';
+            seekto_arg.write_cmd_offset = atoi(command_buffer);
+            TRYC_ERRNO(ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto_arg));
+          }
+        }
+      }
+    } else {
+      TRY(
+        aesdsocket_write_line(file_fd, line, file_monitor),
+        "line writing failed");
+
+      close(file_fd);
+      file_fd = -1;
+
+      TRYC_ERRNO(
+        file_fd = open(
+          filename,
+          O_RDONLY | O_APPEND | O_CREAT,
+          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+    }
   }
+
+  TRY(
+    aesdsocket_read_and_send_file(socket_fd, file_fd, file_monitor),
+    "line reading or sending failed");
 
   ok = true;
 
 done:
   if (line)
     free(line);
+
+  if (file_fd != -1)
+    close(file_fd);
 
   return ok;
 }
@@ -498,7 +519,8 @@ aesdsocket_mainloop(
   bool daemon,
   bool use_timestamp,
   time_t timestamp_frequency_seconds,
-  const char *timestamp_format)
+  const char *timestamp_format,
+  const char *seekto_command)
 {
   bool ok = false;
   struct sigaction action;
@@ -575,6 +597,7 @@ aesdsocket_mainloop(
     TRY_ERRNO(thread_arg->filename = strdup(filename));
     TRY_ERRNO(thread_arg->remote_name = strndup(remote_name, INET6_ADDRSTRLEN));
     thread_arg->file_monitor = write_file_monitor;
+    thread_arg->seekto_command = seekto_command;
 
     pthread_t tid;
     int status;
